@@ -741,14 +741,15 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not openrouter_key:
             return None
-        configured_model = os.getenv("OPENROUTER_MODEL", "google/gemma-4-31b-it:free").strip()
-        models_pool = [
+        configured_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
+        candidate_models = [
             configured_model,
-            "liquid/lfm-2.5-2.6b:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "liquid/lfm-3-1.7b:free",
             "cohere/north-mini-code:free",
-            "nvidia/nemotron-3.5-lightning:free"
+            "baidu/ernie-5.5-flash-preview:free"
         ]
-        unique_models = list(dict.fromkeys([m for m in models_pool if m]))[:3]
+        unique_models = list(dict.fromkeys([m for m in candidate_models if m]))
 
         messages_payload = [{"role": "system", "content": system_instruction}]
         for msg in history_messages:
@@ -759,23 +760,38 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         headers = {
             "Authorization": f"Bearer {openrouter_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:5173",
+            "HTTP-Referer": "https://engibot.pages.dev",
             "X-Title": "EngiBot AI Assistant"
         }
-        data = {
-            "models": unique_models,
-            "messages": messages_payload
-        }
-        res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=35)
-        if res.status_code == 200:
-            result = res.json()
-            return result["choices"][0]["message"]["content"]
-        else:
+
+        last_error = None
+        for model_name in unique_models:
             try:
-                err_msg = res.json().get("error", {}).get("message", res.text)
-            except Exception:
-                err_msg = res.text
-            raise Exception(f"OpenRouter Error ({res.status_code}): {err_msg}")
+                payload = {
+                    "model": model_name,
+                    "messages": messages_payload
+                }
+                res = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+                if res.status_code == 200:
+                    result = res.json()
+                    choices = result.get("choices", [])
+                    if choices:
+                        return choices[0]["message"]["content"]
+                else:
+                    last_error = f"{model_name} HTTP {res.status_code}: {res.text[:120]}"
+                    print(f"[OPENROUTER WARNING] {last_error}. Trying next free model...")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[OPENROUTER EXCEPTION] {model_name}: {e}. Trying next free model...")
+
+        if last_error:
+            raise Exception(f"All OpenRouter models failed: {last_error}")
+        return None
 
     # 4. Helper function to query AWS Bedrock
     def try_bedrock() -> str:
