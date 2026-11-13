@@ -89,6 +89,13 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+DB_STATUS = {
+    "target": "postgresql" if SQLALCHEMY_DATABASE_URL.startswith("postgresql") else "sqlite",
+    "active": "sqlite" if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else "postgresql",
+    "connected": False,
+    "error": None
+}
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, index=True)
@@ -181,7 +188,46 @@ class EmailOTP(Base):
     is_used = Column(Integer, default=0)
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    global engine, SessionLocal, SQLALCHEMY_DATABASE_URL, DB_STATUS
+    
+    if SQLALCHEMY_DATABASE_URL.startswith("postgresql"):
+        print("[DB INIT] Checking connection to PostgreSQL...")
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("[DB INIT] Successfully connected to PostgreSQL!")
+            DB_STATUS["connected"] = True
+            DB_STATUS["active"] = "postgresql"
+        except Exception as e:
+            err_str = str(e)
+            print("\n" + "!" * 68)
+            print("[POSTGRESQL CONNECTION ATTEMPT FAILED]")
+            print(f"Details: {err_str}")
+            if "password authentication failed" in err_str:
+                print(">> REASON: Wrong database password in Render DATABASE_URL.")
+            elif "server closed the connection" in err_str or "6543" in SQLALCHEMY_DATABASE_URL:
+                print(">> REASON: Port 6543 (transaction pooler) dropped the connection.")
+                print(">> FIX: In Render Environment tab, change :6543 to :5432 (Session mode) in DATABASE_URL!")
+            elif "could not translate host name" in err_str:
+                print(">> REASON: Host could not be resolved. Ensure you use the pooler host.")
+            print("[SAFE RECOVERY] Temporarily switching to local SQLite database so Render service stays ONLINE!")
+            print("!" * 68 + "\n")
+            
+            DB_STATUS["connected"] = False
+            DB_STATUS["active"] = "sqlite_fallback"
+            DB_STATUS["error"] = err_str
+            
+            SQLALCHEMY_DATABASE_URL = "sqlite:///./chatbot.db"
+            engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        if not DB_STATUS["error"]:
+            DB_STATUS["connected"] = True
+    except Exception as e:
+        print(f"[DB INIT WARNING] Table creation note: {e}")
+
     # Check and run database-agnostic column migrations
     try:
         inspector = inspect(engine)
@@ -267,17 +313,7 @@ def init_db():
     except Exception as e:
         print(f"[DB MIGRATION WARNING] Column check skipped: {e}")
 
-try:
-    init_db()
-except Exception as e:
-    print(f"\n[CRITICAL DB ERROR] Could not initialize database: {e}")
-    if "password authentication failed" in str(e):
-        print("[HINT] Database password authentication failed. Check your Supabase database password in Render environment variables.")
-    elif "could not translate host name" in str(e):
-        print("[HINT] Could not resolve database host. If using Supabase direct connection, switch to the connection pooler URL (aws-0-ap-south-1.pooler.supabase.com).")
-    elif "invalid connection option" in str(e):
-        print("[HINT] Invalid connection option in DATABASE_URL. Strip ?pgbouncer=true or other non-libpq options.")
-    raise
+init_db()
 
 def get_db():
     db = SessionLocal()
@@ -1053,7 +1089,10 @@ def get_model_status():
             "configured": bool(os.getenv("ANTHROPIC_API_KEY")),
             "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
         },
-        "database": "postgresql" if SQLALCHEMY_DATABASE_URL.startswith("postgresql") else "sqlite",
+        "database": DB_STATUS["active"],
+        "database_target": DB_STATUS["target"],
+        "database_connected": DB_STATUS["connected"],
+        "database_error": DB_STATUS["error"],
         "status": "online"
     }
 
