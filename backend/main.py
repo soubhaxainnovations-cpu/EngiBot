@@ -32,7 +32,11 @@ else:
     load_dotenv(override=True)
 
 # Database Setup (Supports PostgreSQL with fallback to SQLite)
-raw_db_url = os.getenv("DATABASE_URL", "").strip()
+raw_db_url = os.getenv("DATABASE_URL", "").strip().strip('"').strip("'")
+
+if "[YOUR-PASSWORD]" in raw_db_url or "[PASSWORD]" in raw_db_url:
+    print("\n[CRITICAL ERROR] DATABASE_URL in environment contains literal placeholder '[YOUR-PASSWORD]'.")
+    print("Please replace '[YOUR-PASSWORD]' with your actual Supabase database password in Render Environment tab!\n")
 
 # Support individual POSTGRES_* environment variables if DATABASE_URL is not directly set
 if not raw_db_url and os.getenv("POSTGRES_DB"):
@@ -263,7 +267,17 @@ def init_db():
     except Exception as e:
         print(f"[DB MIGRATION WARNING] Column check skipped: {e}")
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"\n[CRITICAL DB ERROR] Could not initialize database: {e}")
+    if "password authentication failed" in str(e):
+        print("[HINT] Database password authentication failed. Check your Supabase database password in Render environment variables.")
+    elif "could not translate host name" in str(e):
+        print("[HINT] Could not resolve database host. If using Supabase direct connection, switch to the connection pooler URL (aws-0-ap-south-1.pooler.supabase.com).")
+    elif "invalid connection option" in str(e):
+        print("[HINT] Invalid connection option in DATABASE_URL. Strip ?pgbouncer=true or other non-libpq options.")
+    raise
 
 def get_db():
     db = SessionLocal()
