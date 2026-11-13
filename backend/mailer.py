@@ -106,6 +106,53 @@ def create_otp_html(otp_code: str, recipient_email: str) -> str:
     """
 
 
+def send_via_brevo_api(recipient_email: str, otp_code: str) -> dict:
+    """Send email over HTTPS port 443 via Brevo (Sendinblue) API (never blocked by Render)."""
+    brevo_key = os.getenv("BREVO_API_KEY", "").strip()
+    if not brevo_key:
+        return {"sent": False, "error": "BREVO_API_KEY not configured"}
+
+    sender_email = (
+        os.getenv("BREVO_SENDER_EMAIL", "").strip() or 
+        os.getenv("SMTP_FROM_EMAIL", "").strip() or 
+        os.getenv("SMTP_USER", "").strip() or 
+        "soubhaxainnovations@gmail.com"
+    )
+    sender_name = os.getenv("BREVO_SENDER_NAME", "EngiBot Assistant").strip()
+
+    try:
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": brevo_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            json={
+                "sender": {
+                    "name": sender_name,
+                    "email": sender_email
+                },
+                "to": [
+                    {"email": recipient_email}
+                ],
+                "subject": f"Your EngiBot Login OTP: {otp_code}",
+                "htmlContent": create_otp_html(otp_code, recipient_email)
+            },
+            timeout=10
+        )
+        if resp.status_code in [200, 201, 202]:
+            print(f"[ENGIBOT EMAIL SERVICE] Live OTP email successfully sent via Brevo HTTPS API to {recipient_email}")
+            return {"sent": True, "message": f"Verification code sent to {recipient_email}"}
+        else:
+            err = resp.text
+            print(f"[ENGIBOT BREVO ERROR] HTTP {resp.status_code}: {err}")
+            return {"sent": False, "error": f"Brevo API error: {err}"}
+    except Exception as e:
+        print(f"[ENGIBOT BREVO ERROR] Exception: {e}")
+        return {"sent": False, "error": f"Brevo request error: {str(e)}"}
+
+
 def send_via_resend_api(recipient_email: str, otp_code: str) -> dict:
     """Send email over HTTPS port 443 via Resend API (bypasses Render SMTP port blocks)."""
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
@@ -138,12 +185,18 @@ def send_via_resend_api(recipient_email: str, otp_code: str) -> dict:
 
 def send_otp_email(recipient_email: str, otp_code: str) -> dict:
     """
-    Sends the OTP code directly to recipient_email via Resend HTTPS or SMTP.
+    Sends the OTP code directly to recipient_email via Brevo HTTPS, Resend HTTPS, or SMTP.
     Does NOT return or expose the OTP in the output.
     """
     email_clean = recipient_email.strip().lower()
 
-    # 1. Try Resend HTTPS API first if key exists (never blocked by Render port restrictions)
+    # 1. Try Brevo HTTPS API first if BREVO_API_KEY exists (works over port 443 on Render)
+    if os.getenv("BREVO_API_KEY"):
+        res = send_via_brevo_api(email_clean, otp_code)
+        if res.get("sent"):
+            return res
+
+    # 2. Try Resend HTTPS API if RESEND_API_KEY exists
     if os.getenv("RESEND_API_KEY"):
         res = send_via_resend_api(email_clean, otp_code)
         if res.get("sent"):
