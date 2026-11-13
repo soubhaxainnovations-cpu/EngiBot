@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: engibot-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    healthCheckPath: /api/model/status
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: DATABASE_URL
+        sync: false # Set to your Supabase PostgreSQL URI
+      - key: ANTHROPIC_API_KEY
+        sync: false # Optional: Anthropic Claude API Key
+      - key: OPENROUTER_API_KEY
+        sync: false # Optional: OpenRouter API Key for free cloud models
+      - key: AI_PROVIDER
+        value: auto
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: EngiBot Assistant
+      - key: SMTP_FROM_EMAIL
+        sync: false
+

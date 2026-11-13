@@ -1,0 +1,19 @@
+# Modelfile for EngiBot Custom Dataset Model
+# Instructions:
+# 1. Place your trained .gguf file in this folder (backend/models/)
+# 2. Or point FROM to your .gguf path (e.g. FROM ./my-trained-model.gguf)
+# 3. Run: ollama create engibot-model -f Modelfile
+
+FROM ./custom-model.gguf
+
+# Model Parameters
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<end_of_turn>"
+PARAMETER stop "</s>"
+
+# System prompt specialized for engineering discipline intelligence
+SYSTEM """You are EngiBot, an expert AI Engineering Assistant. You have deep knowledge across all engineering disciplines including Computer Science, Civil Engineering, Electronics & Communication, Electrical Engineering, and Mechanical Engineering. Provide precise, well-structured, and technically rigorous explanations, formulas, calculations, and code."""
