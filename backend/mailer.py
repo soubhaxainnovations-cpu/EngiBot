@@ -1,4 +1,5 @@
 import os
+import requests
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -105,12 +106,49 @@ def create_otp_html(otp_code: str, recipient_email: str) -> str:
     """
 
 
+def send_via_resend_api(recipient_email: str, otp_code: str) -> dict:
+    """Send email over HTTPS port 443 via Resend API (bypasses Render SMTP port blocks)."""
+    resend_key = os.getenv("RESEND_API_KEY", "").strip()
+    if not resend_key:
+        return {"sent": False, "error": "RESEND_API_KEY not configured"}
+    try:
+        from_addr = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev").strip()
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": f"EngiBot <{from_addr}>",
+                "to": [recipient_email],
+                "subject": f"Your EngiBot Login OTP: {otp_code}",
+                "html": create_otp_html(otp_code, recipient_email)
+            },
+            timeout=10
+        )
+        if resp.status_code in [200, 201]:
+            print(f"[ENGIBOT EMAIL SERVICE] Live OTP email sent via Resend HTTPS API to {recipient_email}")
+            return {"sent": True, "message": f"Verification code sent to {recipient_email}"}
+        else:
+            return {"sent": False, "error": f"Resend API error: {resp.text}"}
+    except Exception as e:
+        return {"sent": False, "error": f"Resend request error: {str(e)}"}
+
+
 def send_otp_email(recipient_email: str, otp_code: str) -> dict:
     """
-    Sends the OTP code directly to recipient_email via SMTP.
+    Sends the OTP code directly to recipient_email via Resend HTTPS or SMTP.
     Does NOT return or expose the OTP in the output.
     """
     email_clean = recipient_email.strip().lower()
+
+    # 1. Try Resend HTTPS API first if key exists (never blocked by Render port restrictions)
+    if os.getenv("RESEND_API_KEY"):
+        res = send_via_resend_api(email_clean, otp_code)
+        if res.get("sent"):
+            return res
+
     config = get_smtp_config()
 
     if not is_smtp_configured():

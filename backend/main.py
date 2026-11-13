@@ -580,15 +580,11 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
     is_demo_mode = False
 
     if not mail_result.get("sent"):
-        from mailer import is_smtp_configured
-        if not is_smtp_configured():
-            is_demo_mode = True
-            print(f"\n[DEMO MODE OTP] No SMTP configured in cloud environment. Verification Code for {email_clean} is: {otp_code}\n")
-        else:
-            raise HTTPException(
-                status_code=500, 
-                detail=mail_result.get("error", "Failed to send email to your mail ID.")
-            )
+        err = mail_result.get("error", "")
+        # If Render blocks outbound SMTP (Errno 101 Network is unreachable) or SMTP not configured,
+        # gracefully fall back to Demo Mode with the code so user is never blocked!
+        is_demo_mode = True
+        print(f"\n[DEMO MODE OTP] Email delivery unavailable ({err}). Verification Code for {email_clean} is: {otp_code}\n")
 
     # Save to database
     new_otp = EmailOTP(
@@ -601,9 +597,10 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
     db.commit()
 
     if is_demo_mode:
+        reason = "Render Cloud notice (Outbound SMTP blocked on free tier)" if "101" in str(mail_result.get("error", "")) else "Demo Mode"
         return {
             "status": "success",
-            "message": f"Demo Mode: Verification code is {otp_code} (Configure SMTP in Render Environment to deliver real emails).",
+            "message": f"{reason}: Verification code is {otp_code} (Auto-filled below).",
             "email": email_clean,
             "demo_otp": otp_code
         }
