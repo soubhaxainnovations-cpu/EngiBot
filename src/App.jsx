@@ -728,11 +728,11 @@ function App() {
 
       setOtpStep('enter-code')
       setCountdown(45)
-      setOtpInput('')
+      setOtpInput(data.demo_otp || '')
       setIsServerOffline(false)
 
       setAuthAlert({ 
-        type: 'success', 
+        type: data.demo_otp ? 'warning' : 'success', 
         text: data.message || `Verification code sent to ${emailClean}. Check your mail inbox.` 
       })
     } catch (err) {

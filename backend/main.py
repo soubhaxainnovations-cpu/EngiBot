@@ -577,11 +577,18 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
 
     # Send email directly to the user's mail ID
     mail_result = send_otp_email(email_clean, otp_code)
+    is_demo_mode = False
+
     if not mail_result.get("sent"):
-        raise HTTPException(
-            status_code=500, 
-            detail=mail_result.get("error", "Failed to send email to your mail ID.")
-        )
+        from mailer import is_smtp_configured
+        if not is_smtp_configured():
+            is_demo_mode = True
+            print(f"\n[DEMO MODE OTP] No SMTP configured in cloud environment. Verification Code for {email_clean} is: {otp_code}\n")
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail=mail_result.get("error", "Failed to send email to your mail ID.")
+            )
 
     # Save to database
     new_otp = EmailOTP(
@@ -592,6 +599,14 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
     )
     db.add(new_otp)
     db.commit()
+
+    if is_demo_mode:
+        return {
+            "status": "success",
+            "message": f"Demo Mode: Verification code is {otp_code} (Configure SMTP in Render Environment to deliver real emails).",
+            "email": email_clean,
+            "demo_otp": otp_code
+        }
 
     return {
         "status": "success",
