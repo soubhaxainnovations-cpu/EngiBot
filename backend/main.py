@@ -1833,8 +1833,7 @@ def admin_login_send_otp(req: AdminOTPRequest, db: Session = Depends(get_db)):
         "status": "success",
         "message": f"Administrator verification code sent to {email_clean}.",
         "step": "verify-otp",
-        "email": email_clean,
-        "demo_otp": otp_code if is_demo else None
+        "email": email_clean
     }
 
 @app.post("/api/admin/login/verify-otp")
@@ -1870,8 +1869,7 @@ def admin_login_verify_otp(req: AdminOTPVerifyRequest, db: Session = Depends(get
         "status": "mfa_required",
         "message": "Email OTP verified. Please enter your Admin MFA Security Key or Authenticator PIN.",
         "mfa_token": mfa_token,
-        "step": "mfa",
-        "demo_mfa_hint": ADMIN_MASTER_MFA_PIN
+        "step": "mfa"
     }
 
 @app.post("/api/admin/login/verify-mfa")

@@ -274,13 +274,7 @@ function App() {
   // Administrator Control Center & Dual-Factor Auth State
   // ==========================================
   const [showAdminModal, setShowAdminModal] = useState(false)
-  const [adminToken, setAdminToken] = useState(() => {
-    try {
-      return localStorage.getItem('engibot_admin_token') || ''
-    } catch {
-      return ''
-    }
-  })
+  const [adminToken, setAdminToken] = useState('')
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const [adminAuthEmail, setAdminAuthEmail] = useState('')
   const [adminLoginStep, setAdminLoginStep] = useState('email') // 'email' | 'otp' | 'mfa'
@@ -378,12 +372,6 @@ function App() {
       return false;
     }
   };
-
-  useEffect(() => {
-    if (adminToken) {
-      verifyAdminSession(adminToken);
-    }
-  }, []);
 
   // Fetch admin dashboard data based on active tab
   const fetchAdminData = async (tabToFetch = adminTab, token = adminToken) => {
@@ -1285,6 +1273,13 @@ function App() {
     if (emailClean === 'soubhaxainnovations@gmail.com') {
       setIsSendingOtp(true)
       setAuthAlert(null)
+      // Strictly enforce logged out state - never auto-open dashboard!
+      setIsAdminAuthenticated(false)
+      setAdminToken('')
+      setAdminOtpInput('')
+      setAdminMfaInput('')
+      setAdminMfaToken('')
+      try { localStorage.removeItem('engibot_admin_token'); } catch {}
       try {
         const res = await fetch(`${API_BASE}/api/admin/login/send-otp`, {
           method: 'POST',
@@ -1805,7 +1800,14 @@ function App() {
              1. DUAL-FACTOR ADMIN LOGIN DIALOG (OTP & MFA)
              ======================================================== */
           <div className="modal-content admin-login-dialog">
-            <button className="modal-close" onClick={() => setShowAdminModal(false)}>
+            <button className="modal-close" onClick={() => {
+              setShowAdminModal(false);
+              setAdminLoginStep('email');
+              setAdminOtpInput('');
+              setAdminMfaInput('');
+              setAdminMfaToken('');
+              setAdminAuthAlert(null);
+            }}>
               <X size={20} />
             </button>
 
@@ -1927,14 +1929,7 @@ function App() {
                 <p className="admin-step-desc">
                   Enter your Administrator Master Security PIN or Security Key to complete authentication.
                 </p>
-                <div className="admin-mfa-hint-box">
-                  <KeyRound size={15} />
-                  <div>
-                    <strong>Master PIN:</strong> <code>982461</code><br />
-                    <strong>Master Key:</strong> <code>ENGIBOT-MFA-2026</code>
-                  </div>
-                </div>
-                <div className="input-group">
+                <div className="input-group" style={{ marginTop: '1.25rem' }}>
                   <label>MFA PIN or Master Key</label>
                   <div className="input-with-icon">
                     <Lock size={16} />
@@ -1942,7 +1937,7 @@ function App() {
                       type="password"
                       value={adminMfaInput}
                       onChange={(e) => setAdminMfaInput(e.target.value)}
-                      placeholder="Enter PIN (982461) or Key"
+                      placeholder="Enter confidential Master PIN or Key"
                       autoFocus
                       required
                     />
@@ -3662,10 +3657,6 @@ function App() {
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     <RefreshCw size={16} className="spinner" /> Sending OTP...
                   </span>
-                ) : emailInput.trim().toLowerCase() === 'soubhaxainnovations@gmail.com' ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={16} /> Admin Sign In (OTP + MFA) <ArrowRight size={16} />
-                  </span>
                 ) : (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     Send Verification Code <ArrowRight size={16} />
@@ -4183,17 +4174,18 @@ function App() {
             className="user-info"
             onClick={() => {
               if (user?.email === 'soubhaxainnovations@gmail.com') {
-                setShowAdminModal(true);
-                setAdminAuthAlert(null);
-                if (adminToken) {
-                  verifyAdminSession(adminToken).then(valid => {
-                    if (valid) fetchAdminData(adminTab, adminToken);
-                  });
+                if (!isAdminAuthenticated) {
+                  setAdminLoginStep('email');
+                  setAdminEmailInput('soubhaxainnovations@gmail.com');
+                  setAdminOtpInput('');
+                  setAdminMfaInput('');
+                  setAdminMfaToken('');
+                  setAdminAuthAlert(null);
                 }
+                setShowAdminModal(true);
               }
             }}
             style={{ cursor: user?.email === 'soubhaxainnovations@gmail.com' ? 'pointer' : 'default' }}
-            title={user?.email === 'soubhaxainnovations@gmail.com' ? 'Super Administrator (Click to open Admin Panel)' : undefined}
           >
             <User size={18} style={{ flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', overflow: 'hidden', flex: 1 }}>
