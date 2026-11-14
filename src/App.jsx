@@ -5402,7 +5402,7 @@ function App() {
               </div>
               <div style={{ textAlign: 'left' }}>
                 <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Exam Mode & Syllabus Prep</h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>University-aligned previous-year questions, quizzes, and revision cards for {university} (Sem {semester}).</p>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Branch-aligned previous-year questions, quizzes, and revision cards for {activeDiscipline?.name || 'Engineering'}.</p>
               </div>
             </div>
 
