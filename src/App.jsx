@@ -764,8 +764,7 @@ function App() {
           if (!res.ok) throw new Error('Status error');
           return res.json();
         })
-        .then(data => {
-          setModelStatus(data)
+        .then(() => {
           setIsServerOffline(false)
         })
         .catch(() => {
@@ -1340,7 +1339,7 @@ function App() {
       const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
-        ? 'Cannot connect to backend server. Please make sure the backend is running (run start.bat).'
+        ? 'Cannot connect to backend server. Please verify your connection or try again in a moment.'
         : (err.message || 'Error connecting to server');
       setAuthAlert({ type: 'error', text })
     } finally {
@@ -1417,7 +1416,7 @@ function App() {
       const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
-        ? 'Cannot connect to backend server. Please make sure the backend is running (run start.bat).'
+        ? 'Cannot connect to backend server. Please verify your connection or try again in a moment.'
         : (err.message || 'Verification failed. Please try again.');
       setAuthAlert({ type: 'error', text })
     } finally {
@@ -1626,7 +1625,7 @@ function App() {
       const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
-        ? 'Cannot connect to backend server. Please make sure the backend is running (run start.bat).'
+        ? 'Cannot connect to backend server. Please verify your connection or try again in a moment.'
         : (err.message || 'Error connecting to server');
       setAuthAlert({ type: 'error', text })
     } finally {
@@ -1764,7 +1763,7 @@ function App() {
       const isConnectionErr = error.message === 'Failed to fetch' || error.message?.includes('NetworkError') || error.name === 'TypeError';
       if (isConnectionErr) setIsServerOffline(true);
       const msg = isConnectionErr
-        ? 'Cannot connect to backend server on port 8000. Please launch start.bat to start the server.'
+        ? 'Cannot connect to backend server. Please verify your connection or try again in a moment.'
         : (error.message || 'Something went wrong.');
       setMessages(prev => [...prev, { role: 'ai', content: `Error: ${msg}` }])
     } finally {
@@ -3583,15 +3582,6 @@ function App() {
             </div>
           )}
 
-          {/* Server Offline Notice */}
-          {isServerOffline && !authAlert && (
-            <div className="server-offline-banner">
-              <AlertCircle size={16} style={{ flexShrink: 0 }} />
-              <span>
-                <strong>Backend is offline:</strong> Launch <code>start.bat</code> to start the server.
-              </span>
-            </div>
-          )}
 
           {/* Status / Alert Feedback */}
           {authAlert && (
