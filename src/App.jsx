@@ -1109,7 +1109,7 @@ function App() {
   if (!user) {
     return (
       <div className="app-container auth-container" style={getBackgroundStyle(DISCIPLINES[0].bgUrl)}>
-        <div className="auth-card glass-panel">
+        <div className={`auth-card glass-panel ${authMode === 'register' ? 'register-card' : ''}`}>
           <div className="brand-icon mx-auto">
             <img src="/logo.png" alt="EngiBot Logo" style={{ width: 'auto', height: '100%', objectFit: 'contain' }} />
           </div>
@@ -1323,39 +1323,34 @@ function App() {
 
               {/* Engineering Branch Selector */}
               <div className="auth-branch-section">
-                <label className="auth-branch-header-label">
-                  <Layers size={15} />
-                  <span>Choose Your Engineering Branch</span>
-                </label>
+                <div className="auth-branch-header">
+                  <Layers size={15} className="auth-branch-header-icon" />
+                  <span className="auth-branch-title">Choose Your Engineering Branch</span>
+                </div>
                 <p className="auth-branch-subtext">
-                  Select your discipline. EngiBot's technical engine, calculations, and answers will specialize in this branch.
+                  EngiBot will specialize its technical answers, calculations, and standards in this branch.
                 </p>
-                <div className="auth-branch-grid">
+
+                <div className="auth-branch-pills-grid">
                   {DISCIPLINES.map(d => {
                     const Icon = d.icon;
                     const isSelected = registerBranch === d.id;
                     return (
-                      <div
+                      <button
                         key={d.id}
                         type="button"
-                        className={`auth-branch-card ${isSelected ? 'selected' : ''}`}
+                        className={`auth-branch-pill-btn ${isSelected ? 'selected' : ''}`}
                         onClick={() => setRegisterBranch(d.id)}
                       >
-                        <div className="auth-branch-card-icon">
-                          <Icon size={18} />
-                        </div>
-                        <div className="auth-branch-card-text">
-                          <div className="auth-branch-card-name">{d.name}</div>
-                          <div className="auth-branch-card-desc">{d.desc}</div>
-                        </div>
-                        {isSelected && (
-                          <div className="auth-branch-check">
-                            <Check size={14} />
-                          </div>
-                        )}
-                      </div>
+                        <Icon size={15} className="branch-pill-btn-icon" />
+                        <span className="branch-pill-btn-text">{d.name}</span>
+                        {isSelected && <Check size={14} className="branch-pill-btn-check" />}
+                      </button>
                     );
                   })}
+                </div>
+                <div className="auth-branch-footer-note">
+                  Selected: <strong>{DISCIPLINES.find(d => d.id === registerBranch)?.name}</strong>
                 </div>
               </div>
 
