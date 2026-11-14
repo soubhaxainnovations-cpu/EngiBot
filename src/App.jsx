@@ -283,7 +283,7 @@ function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const [adminAuthEmail, setAdminAuthEmail] = useState('')
   const [adminLoginStep, setAdminLoginStep] = useState('email') // 'email' | 'otp' | 'mfa'
-  const [adminEmailInput, setAdminEmailInput] = useState('soubhaxainnovations@gmail.com')
+  const [adminEmailInput, setAdminEmailInput] = useState('')
   const [adminOtpInput, setAdminOtpInput] = useState('')
   const [adminMfaToken, setAdminMfaToken] = useState('')
   const [adminMfaInput, setAdminMfaInput] = useState('')
@@ -1097,6 +1097,34 @@ function App() {
       return
     }
 
+    // Administrator manual email login trigger
+    if (emailClean === 'soubhaxainnovations@gmail.com') {
+      setIsSendingOtp(true)
+      setAuthAlert(null)
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/login/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailClean })
+        })
+        const data = await res.json()
+        if (res.ok) {
+          setAdminEmailInput(emailClean)
+          setAdminLoginStep('otp')
+          setAdminCountdown(60)
+          setShowAdminModal(true)
+          setAdminAuthAlert({ type: 'success', message: 'Administrator OTP sent to soubhaxainnovations@gmail.com. Complete Dual-Factor authentication (OTP + MFA).' })
+        } else {
+          setAuthAlert({ type: 'error', text: data.detail || 'Failed to dispatch administrator OTP.' })
+        }
+      } catch (err) {
+        setAuthAlert({ type: 'error', text: 'Error connecting to server.' })
+      } finally {
+        setIsSendingOtp(false)
+      }
+      return
+    }
+
     setIsSendingOtp(true)
     setAuthAlert(null)
 
@@ -1148,6 +1176,34 @@ function App() {
     const codeClean = otpInput.trim()
     if (codeClean.length !== 6) {
       setAuthAlert({ type: 'error', text: 'Please enter the 6-digit OTP code.' })
+      return
+    }
+
+    const emailClean = emailInput.trim().toLowerCase()
+    if (emailClean === 'soubhaxainnovations@gmail.com') {
+      setIsVerifyingOtp(true)
+      setAuthAlert(null)
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/login/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailClean, otp_code: codeClean })
+        })
+        const data = await res.json()
+        if (res.ok && data.status === 'mfa_required') {
+          setAdminEmailInput(emailClean)
+          setAdminMfaToken(data.mfa_token)
+          setAdminLoginStep('mfa')
+          setShowAdminModal(true)
+          setAdminAuthAlert({ type: 'success', message: 'OTP verified! Enter your Administrator Master Security PIN / Key.' })
+        } else {
+          throw new Error(data.detail || 'Invalid or expired OTP code')
+        }
+      } catch (err) {
+        setAuthAlert({ type: 'error', text: err.message || 'Error verifying OTP code.' })
+      } finally {
+        setIsVerifyingOtp(false)
+      }
       return
     }
 
@@ -2759,6 +2815,10 @@ function App() {
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     <RefreshCw size={16} className="spinner" /> Sending OTP...
                   </span>
+                ) : emailInput.trim().toLowerCase() === 'soubhaxainnovations@gmail.com' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck size={16} /> Admin Sign In (OTP + MFA) <ArrowRight size={16} />
+                  </span>
                 ) : (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     Send Verification Code <ArrowRight size={16} />
@@ -3152,26 +3212,6 @@ function App() {
                 </button>
               </p>
             )}
-          </div>
-
-          {/* Administrator Portal Access */}
-          <div className="admin-portal-link-wrap">
-            <button 
-              type="button" 
-              className="admin-portal-link-btn"
-              onClick={() => {
-                setShowAdminModal(true);
-                setAdminAuthAlert(null);
-                if (adminToken) {
-                  verifyAdminSession(adminToken).then(valid => {
-                    if (valid) fetchAdminData(adminTab, adminToken);
-                  });
-                }
-              }}
-            >
-              <ShieldCheck size={14} />
-              <span>Administrator Portal ({adminEmailInput})</span>
-            </button>
           </div>
         </div>
 
