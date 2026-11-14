@@ -390,6 +390,14 @@ class OTPVerify(BaseModel):
     email: str
     otp_code: str
 
+class ForgotPasswordSendRequest(BaseModel):
+    email: str
+
+class ForgotPasswordResetRequest(BaseModel):
+    email: str
+    otp_code: str
+    new_password: str
+
 class AdminOTPRequest(BaseModel):
     email: str
 
@@ -743,6 +751,95 @@ def login(auth: UserLogin, db: Session = Depends(get_db)):
         "discipline": getattr(user, "discipline", "general") or "general",
         "role": getattr(user, "role", "student") or "student",
         "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
+    }
+
+@app.post("/api/auth/forgot-password/send-otp")
+def forgot_password_send_otp(req: ForgotPasswordSendRequest, db: Session = Depends(get_db)):
+    email_clean = req.email.strip().lower()
+    if not email_clean or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_clean):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found with this email address. Please check your email or create a new account."
+        )
+
+    # Invalidate previous unused reset OTPs for this email
+    db.query(EmailOTP).filter(
+        EmailOTP.email == email_clean,
+        EmailOTP.is_used == 0
+    ).update({"is_used": 2})
+
+    otp_code = f"{secrets.randbelow(900000) + 100000}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    db_otp = EmailOTP(
+        email=email_clean,
+        otp_code=otp_code,
+        expires_at=expires_at,
+        is_used=0
+    )
+    db.add(db_otp)
+    db.commit()
+
+    # Dispatch email
+    mail_res = send_otp_email(email_clean, otp_code)
+    
+    return {
+        "status": "success",
+        "message": f"Password reset verification code sent to {email_clean}. Please check your email.",
+        "email": email_clean
+    }
+
+@app.post("/api/auth/forgot-password/reset")
+def forgot_password_reset(req: ForgotPasswordResetRequest, db: Session = Depends(get_db)):
+    email_clean = req.email.strip().lower()
+    code_clean = req.otp_code.strip()
+    new_password = req.new_password.strip()
+
+    if not email_clean or not code_clean or not new_password:
+        raise HTTPException(status_code=400, detail="All fields (email, code, new password) are required.")
+
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters long.")
+
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User account not found.")
+
+    # Validate OTP
+    now = datetime.utcnow()
+    otp_record = db.query(EmailOTP).filter(
+        EmailOTP.email == email_clean,
+        EmailOTP.otp_code == code_clean,
+        EmailOTP.is_used == 0,
+        EmailOTP.expires_at >= now
+    ).order_by(EmailOTP.id.desc()).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code. Please request a new code.")
+
+    # Mark OTP as used
+    otp_record.is_used = 1
+    # Update password
+    user.password = new_password
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "status": "success",
+        "message": "Password reset successfully! You can now sign in with your new password.",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "name": user.name,
+            "email": user.email,
+            "discipline": getattr(user, "discipline", "general") or "general",
+            "role": getattr(user, "role", "student") or "student",
+            "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
+        }
     }
 
 @app.post("/api/otp/send")

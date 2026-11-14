@@ -1542,6 +1542,29 @@
   border-color: var(--accent-primary);
 }
 
+.forgot-password-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.25rem 0 0.5rem 0;
+}
+
+.forgot-pwd-link {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #2563eb;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+
+.forgot-pwd-link:hover {
+  color: #1d4ed8;
+}
+
 .auth-switch {
   margin-top: 1.5rem;
   color: var(--text-secondary);

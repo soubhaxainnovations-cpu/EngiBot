@@ -172,7 +172,7 @@ function App() {
   })
 
   // Auth state
-  const [authMode, setAuthMode] = useState('otp') // 'otp' | 'login' | 'register'
+  const [authMode, setAuthMode] = useState('otp') // 'otp' | 'login' | 'register' | 'forgot'
   const [otpStep, setOtpStep] = useState('enter-email') // 'enter-email' | 'enter-code'
   const [emailInput, setEmailInput] = useState('')
   const [otpInput, setOtpInput] = useState('')
@@ -182,6 +182,16 @@ function App() {
   const [countdown, setCountdown] = useState(0)
   const [authAlert, setAuthAlert] = useState(null)
   const [isServerOffline, setIsServerOffline] = useState(false)
+
+  // Forgot Password State
+  const [forgotStep, setForgotStep] = useState('request-otp') // 'request-otp' | 'reset-password'
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotOtp, setForgotOtp] = useState('')
+  const [forgotNewPassword, setForgotNewPassword] = useState('')
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('')
+  const [isSendingForgotOtp, setIsSendingForgotOtp] = useState(false)
+  const [isResettingPassword, setIsResettingPassword] = useState(false)
+  const [forgotCountdown, setForgotCountdown] = useState(0)
 
   // Registration 2-Step OTP Verification State
   const [regStep, setRegStep] = useState('form') // 'form' | 'verify-otp'
@@ -1263,6 +1273,21 @@ function App() {
     return () => clearInterval(timer);
   }, [regCountdown]);
 
+  // Countdown timer for Forgot Password OTP resend
+  useEffect(() => {
+    if (forgotCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setForgotCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [forgotCountdown]);
+
   useEffect(() => {
     scrollToBottom()
   }, [messages, isLoading])
@@ -1643,6 +1668,96 @@ function App() {
       setIsAuthenticating(false)
     }
   }
+
+  // Handle Forgot Password - Step 1: Send Reset OTP
+  const handleForgotSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setAuthAlert({ type: 'error', text: 'Please enter your registered email address.' });
+      return;
+    }
+    setIsSendingForgotOtp(true);
+    setAuthAlert(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setForgotStep('reset-password');
+        setForgotCountdown(60);
+        setForgotOtp('');
+        setForgotNewPassword('');
+        setForgotConfirmPassword('');
+        setAuthAlert({
+          type: 'success',
+          text: data.message || `Password reset code sent to ${cleanEmail}. Please check your inbox.`
+        });
+      } else {
+        setAuthAlert({ type: 'error', text: data.detail || 'Failed to send password reset code.' });
+      }
+    } catch {
+      setAuthAlert({ type: 'error', text: 'Cannot connect to backend server. Please verify your connection or try again in a moment.' });
+    } finally {
+      setIsSendingForgotOtp(false);
+    }
+  };
+
+  // Handle Forgot Password - Step 2: Verify OTP & Reset Password
+  const handleForgotResetPassword = async (e) => {
+    if (e) e.preventDefault();
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    const cleanOtp = forgotOtp.trim();
+    if (cleanOtp.length !== 6) {
+      setAuthAlert({ type: 'error', text: 'Please enter the 6-digit verification code sent to your email.' });
+      return;
+    }
+    if (forgotNewPassword.length < 6) {
+      setAuthAlert({ type: 'error', text: 'New password must be at least 6 characters.' });
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setAuthAlert({ type: 'error', text: 'Passwords do not match. Please re-enter your new password.' });
+      return;
+    }
+
+    setIsResettingPassword(true);
+    setAuthAlert(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/forgot-password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          otp_code: cleanOtp,
+          new_password: forgotNewPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        const updatedUser = data.user;
+        setUser(updatedUser);
+        localStorage.setItem('chat_user', JSON.stringify(updatedUser));
+        if (updatedUser.discipline) {
+          const found = DISCIPLINES.find(d => d.id === updatedUser.discipline);
+          if (found) setActiveDiscipline(found);
+        }
+        if (updatedUser.preferred_mode) {
+          setActiveMode(updatedUser.preferred_mode);
+        }
+        setAuthAlert({ type: 'success', text: 'Password reset successful! You are now signed in.' });
+      } else {
+        setAuthAlert({ type: 'error', text: data.detail || 'Password reset failed. Please check the code.' });
+      }
+    } catch {
+      setAuthAlert({ type: 'error', text: 'Cannot connect to server. Please try again in a moment.' });
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
 
   const handleLogout = () => {
     setUser(null)
@@ -3639,6 +3754,11 @@ function App() {
                 <p>Choose your engineering branch and verify your email</p>
               </>
             )
+          ) : authMode === 'forgot' ? (
+            <>
+              <h2>Reset Password</h2>
+              <p>Recover access to your EngiBot account</p>
+            </>
           ) : (
             <>
               <h2>Welcome to EngiBot</h2>
@@ -3647,7 +3767,7 @@ function App() {
           )}
 
           {/* Auth Mode Switcher Tabs */}
-          {authMode !== 'register' && (
+          {authMode !== 'register' && authMode !== 'forgot' && (
             <div className="auth-tabs" role="tablist">
               <button
                 type="button"
@@ -3840,9 +3960,170 @@ function App() {
                   autoComplete="current-password" 
                 />
               </div>
+              <div className="forgot-password-link-row">
+                <button
+                  type="button"
+                  className="text-btn forgot-pwd-link"
+                  onClick={() => {
+                    setAuthMode('forgot');
+                    setForgotStep('request-otp');
+                    setForgotEmail('');
+                    setAuthAlert(null);
+                  }}
+                >
+                  Forgot Password?
+                </button>
+              </div>
               <button type="submit" className="save-btn" disabled={isAuthenticating}>
                 {isAuthenticating ? 'Signing In...' : 'Sign In'}
               </button>
+            </form>
+          )}
+
+          {/* 3. FORGOT PASSWORD FLOW */}
+          {authMode === 'forgot' && forgotStep === 'request-otp' && (
+            <form onSubmit={handleForgotSendOtp} className="auth-form">
+              <div className="auth-badge-icon">
+                <Key size={24} />
+              </div>
+              <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                Enter your registered email address and we'll send you a 6-digit verification code to reset your password.
+              </p>
+              <div className="input-with-icon">
+                <Mail size={18} className="input-icon" />
+                <input
+                  name="forgotEmail"
+                  type="email"
+                  placeholder="Registered Email Address"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <button type="submit" className="save-btn" disabled={isSendingForgotOtp}>
+                {isSendingForgotOtp ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={16} className="spinner" /> Sending Reset Code...
+                  </span>
+                ) : (
+                  'Send Reset Code'
+                )}
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                style={{ marginTop: '0.75rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthAlert(null);
+                }}
+              >
+                <ArrowLeft size={13} /> Back to Sign In
+              </button>
+            </form>
+          )}
+
+          {authMode === 'forgot' && forgotStep === 'reset-password' && (
+            <form onSubmit={handleForgotResetPassword} className="auth-form">
+              <div className="auth-badge-icon">
+                <ShieldCheck size={24} />
+              </div>
+              <div className="otp-email-chip">
+                <Mail size={14} />
+                <span>{forgotEmail}</span>
+                <button
+                  type="button"
+                  className="otp-edit-btn"
+                  onClick={() => { setForgotStep('request-otp'); setAuthAlert(null); }}
+                  title="Change email"
+                >
+                  <Edit3 size={12} /> Edit
+                </button>
+              </div>
+              <p style={{ margin: '0 0 1rem', fontSize: '0.86rem', color: 'var(--text-secondary)' }}>
+                Enter the 6-digit code sent to your email and choose your new password.
+              </p>
+
+              <div className="input-group" style={{ textAlign: 'left', marginBottom: '0.5rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px', display: 'block' }}>
+                  6-Digit Verification Code
+                </label>
+                <input
+                  name="forgotOtp"
+                  type="text"
+                  className="otp-code-input"
+                  placeholder="••••••"
+                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={forgotOtp}
+                  onChange={(e) => setForgotOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="input-with-icon">
+                <Key size={18} className="input-icon" />
+                <input
+                  name="newPassword"
+                  type="password"
+                  placeholder="New Password (min. 6 chars)"
+                  value={forgotNewPassword}
+                  onChange={(e) => setForgotNewPassword(e.target.value)}
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <div className="input-with-icon">
+                <Lock size={18} className="input-icon" />
+                <input
+                  name="confirmPassword"
+                  type="password"
+                  placeholder="Confirm New Password"
+                  value={forgotConfirmPassword}
+                  onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="save-btn" disabled={isResettingPassword || forgotOtp.length < 6}>
+                {isResettingPassword ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={16} className="spinner" /> Updating Password...
+                  </span>
+                ) : (
+                  'Reset Password & Sign In'
+                )}
+              </button>
+
+              <div className="resend-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="resend-btn"
+                  onClick={() => { setForgotStep('request-otp'); setAuthAlert(null); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <ArrowLeft size={13} /> Back
+                </button>
+                {forgotCountdown > 0 ? (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Resend code in <strong>{forgotCountdown}s</strong>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="resend-btn"
+                    onClick={handleForgotSendOtp}
+                    disabled={isSendingForgotOtp}
+                  >
+                    <RefreshCw size={13} className={isSendingForgotOtp ? "spinner" : ""} /> Resend OTP
+                  </button>
+                )}
+              </div>
             </form>
           )}
 
@@ -4111,6 +4392,20 @@ function App() {
                   }}
                 >
                   Login with Email OTP
+                </button>
+              </p>
+            ) : authMode === 'forgot' ? (
+              <p>
+                Remember your password?{' '}
+                <button 
+                  className="text-btn" 
+                  type="button"
+                  onClick={() => { 
+                    setAuthMode('login'); 
+                    setAuthAlert(null); 
+                  }}
+                >
+                  Sign In
                 </button>
               </p>
             ) : (
