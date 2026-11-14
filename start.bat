@@ -8,6 +8,10 @@ echo          Starting Engineering Chatbot (EngiBot)
 echo =======================================================
 echo.
 
+echo.
+echo Cleaning up any old running servers on ports 8000 and 5173...
+powershell -Command "Get-NetTCPConnection -LocalPort 8000,5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+
 :: 1. Check if Ollama is installed
 where ollama >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
