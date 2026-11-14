@@ -4177,28 +4177,24 @@ function App() {
             })
           )}
         </div>
-        
-        {/* Administrator Portal Sidebar Trigger */}
-        <button
-          type="button"
-          className="admin-sidebar-entry-btn"
-          onClick={() => {
-            setShowAdminModal(true);
-            setAdminAuthAlert(null);
-            if (adminToken) {
-              verifyAdminSession(adminToken).then(valid => {
-                if (valid) fetchAdminData(adminTab, adminToken);
-              });
-            }
-          }}
-          title="Open Administrator Control Center"
-        >
-          <ShieldCheck size={16} />
-          <span>Admin Portal</span>
-        </button>
 
         <div className="user-profile">
-          <div className="user-info">
+          <div 
+            className="user-info"
+            onClick={() => {
+              if (user?.email === 'soubhaxainnovations@gmail.com') {
+                setShowAdminModal(true);
+                setAdminAuthAlert(null);
+                if (adminToken) {
+                  verifyAdminSession(adminToken).then(valid => {
+                    if (valid) fetchAdminData(adminTab, adminToken);
+                  });
+                }
+              }
+            }}
+            style={{ cursor: user?.email === 'soubhaxainnovations@gmail.com' ? 'pointer' : 'default' }}
+            title={user?.email === 'soubhaxainnovations@gmail.com' ? 'Super Administrator (Click to open Admin Panel)' : undefined}
+          >
             <User size={18} style={{ flexShrink: 0 }} />
             <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', overflow: 'hidden', flex: 1 }}>
               <span style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
