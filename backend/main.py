@@ -973,9 +973,14 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    except Exception as e:
-        print(f"Error in chat endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "EngiBot Backend",
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.get("/api/conversations/{user_id}")
 def get_conversations(user_id: int, discipline: Optional[str] = None, db: Session = Depends(get_db)):
