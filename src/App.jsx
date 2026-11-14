@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { 
   Bot, User, Send, Key,
   Cpu, HardHat, Radio, Zap, Wrench, MessageSquare, LogOut,
-  Mail, ShieldCheck, ArrowRight, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles,
+  Mail, ShieldCheck, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles, UserPlus,
   Plus, Trash2, Check, X, Layers, MessageCircle, ChevronDown, Globe,
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award
@@ -180,6 +180,22 @@ function App() {
   const [authAlert, setAuthAlert] = useState(null)
   const [modelStatus, setModelStatus] = useState(null)
   const [isServerOffline, setIsServerOffline] = useState(false)
+
+  // Registration 2-Step OTP Verification State
+  const [regStep, setRegStep] = useState('form') // 'form' | 'verify-otp'
+  const [regFormData, setRegFormData] = useState({
+    fullName: '',
+    email: '',
+    dob: '',
+    phone: '',
+    username: '',
+    password: '',
+    discipline: 'general'
+  })
+  const [regOtpInput, setRegOtpInput] = useState('')
+  const [isSendingRegOtp, setIsSendingRegOtp] = useState(false)
+  const [isVerifyingRegOtp, setIsVerifyingRegOtp] = useState(false)
+  const [regCountdown, setRegCountdown] = useState(0)
 
   // Persona & Curriculum Onboarding State
   const [userRole, setUserRole] = useState('student') // 'student' | 'professional'
@@ -794,7 +810,7 @@ function App() {
     }
   };
 
-  // Countdown timer for OTP resend
+  // Countdown timer for OTP resend (Login OTP)
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setInterval(() => {
@@ -809,11 +825,26 @@ function App() {
     return () => clearInterval(timer);
   }, [countdown]);
 
+  // Countdown timer for Registration OTP resend
+  useEffect(() => {
+    if (regCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setRegCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [regCountdown]);
+
   useEffect(() => {
     scrollToBottom()
   }, [messages, isLoading])
 
-  // Handle Send OTP
+  // Handle Send OTP (Login OTP - for existing registered users only)
   const handleSendOtp = async (e) => {
     e?.preventDefault()
     const emailClean = emailInput.trim().toLowerCase()
@@ -834,6 +865,14 @@ function App() {
 
       const data = await res.json()
       if (!res.ok) {
+        if (res.status === 404) {
+          setAuthAlert({
+            type: 'error',
+            text: data.detail || 'No account registered with this email address. Please click below to create your account.',
+            isUnregistered: true
+          })
+          return
+        }
         throw new Error(data.detail || 'Failed to send verification code')
       }
 
@@ -859,7 +898,7 @@ function App() {
     }
   }
 
-  // Handle Verify OTP
+  // Handle Verify OTP (Login OTP)
   const handleVerifyOtp = async (e) => {
     e?.preventDefault()
     const codeClean = otpInput.trim()
@@ -908,28 +947,175 @@ function App() {
     }
   }
 
-  // Handle Password Login or Register
-  const handlePasswordAuth = async (e) => {
+  // Handle Registration Step 1: Send OTP to verify email
+  const handleRegisterSendOtp = async (e) => {
+    e?.preventDefault()
+    setAuthAlert(null)
+
+    const fullName = (regFormData.fullName || '').trim()
+    const email = (regFormData.email || '').trim().toLowerCase()
+    const dob = regFormData.dob || ''
+    const phone = (regFormData.phone || '').trim()
+    const username = (regFormData.username || '').trim()
+    const password = (regFormData.password || '').trim()
+    const discipline = registerBranch || regFormData.discipline || 'general'
+
+    if (!fullName) {
+      setAuthAlert({ type: 'error', text: 'Please enter your Full Name.' })
+      return
+    }
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      setAuthAlert({ type: 'error', text: 'Please enter a valid email address.' })
+      return
+    }
+    if (!dob) {
+      setAuthAlert({ type: 'error', text: 'Please enter your Date of Birth.' })
+      return
+    }
+
+    // Client-side age validation (18+)
+    const birthDate = new Date(dob)
+    const today = new Date()
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const m = today.getMonth() - birthDate.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+    if (age < 18) {
+      setAuthAlert({ type: 'error', text: 'You must be at least 18 years old to register.' })
+      return
+    }
+
+    if (!phone) {
+      setAuthAlert({ type: 'error', text: 'Please enter your Phone Number.' })
+      return
+    }
+    if (!username) {
+      setAuthAlert({ type: 'error', text: 'Please choose a Username.' })
+      return
+    }
+    if (!password || password.length < 4) {
+      setAuthAlert({ type: 'error', text: 'Password must be at least 4 characters long.' })
+      return
+    }
+
+    setIsSendingRegOtp(true)
+
+    const payload = {
+      name: fullName,
+      dob,
+      phone_number: phone,
+      email,
+      username,
+      password,
+      discipline
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/register/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to send verification code')
+      }
+
+      setRegStep('verify-otp')
+      setRegCountdown(60)
+      setRegOtpInput(data.demo_otp || '')
+      setIsServerOffline(false)
+
+      setAuthAlert({
+        type: data.demo_otp ? 'warning' : 'success',
+        text: data.message || `Verification code sent to ${email}. Please check your mail inbox.`
+      })
+    } catch (err) {
+      console.error(err)
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
+      if (isConnectionErr) setIsServerOffline(true);
+      const text = isConnectionErr
+        ? 'Cannot connect to backend server. Please make sure the backend is running.'
+        : (err.message || 'Error sending registration verification code.');
+      setAuthAlert({ type: 'error', text })
+    } finally {
+      setIsSendingRegOtp(false)
+    }
+  }
+
+  // Handle Registration Step 2: Verify OTP & Create User
+  const handleRegisterVerifyOtp = async (e) => {
+    e?.preventDefault()
+    const codeClean = regOtpInput.trim()
+    if (codeClean.length !== 6) {
+      setAuthAlert({ type: 'error', text: 'Please enter the 6-digit verification code.' })
+      return
+    }
+
+    setIsVerifyingRegOtp(true)
+    setAuthAlert(null)
+
+    const payload = {
+      name: (regFormData.fullName || '').trim(),
+      dob: regFormData.dob,
+      phone_number: (regFormData.phone || '').trim(),
+      email: (regFormData.email || '').trim().toLowerCase(),
+      username: (regFormData.username || '').trim(),
+      password: (regFormData.password || '').trim(),
+      discipline: registerBranch || regFormData.discipline || 'general',
+      otp_code: codeClean
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/register/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Registration verification failed')
+      }
+
+      // Successful registration & verification!
+      setUser(data)
+      localStorage.setItem('chat_user', JSON.stringify(data))
+      if (data.discipline) {
+        const found = DISCIPLINES.find(d => d.id === data.discipline)
+        if (found) setActiveDiscipline(found)
+      }
+      setAuthAlert(null)
+      setIsServerOffline(false)
+    } catch (err) {
+      console.error(err)
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
+      if (isConnectionErr) setIsServerOffline(true);
+      const text = isConnectionErr
+        ? 'Cannot connect to backend server. Please make sure the backend is running.'
+        : (err.message || 'Invalid or expired verification code.');
+      setAuthAlert({ type: 'error', text })
+    } finally {
+      setIsVerifyingRegOtp(false)
+    }
+  }
+
+  // Handle Password Login (Existing accounts only)
+  const handlePasswordLogin = async (e) => {
     e.preventDefault()
     const form = e.target
     setIsAuthenticating(true)
     setAuthAlert(null)
-    
-    const payload = {}
-    if (authMode === 'register') {
-      payload.name = form.fullName.value.trim()
-      payload.email = form.email.value.trim().toLowerCase()
-      payload.dob = form.dob.value
-      payload.phone_number = form.phone.value.trim()
-      payload.discipline = registerBranch || 'general'
+
+    const payload = {
+      username: form.username.value.trim(),
+      password: form.password.value.trim()
     }
-    
-    payload.username = form.username.value.trim()
-    payload.password = form.password.value.trim()
 
     try {
-      const endpoint = authMode === 'login' ? '/api/login' : '/api/register'
-      const res = await fetch(`${API_BASE}${endpoint}`, {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1113,8 +1299,25 @@ function App() {
           <div className="brand-icon mx-auto">
             <img src="/logo.png" alt="EngiBot Logo" style={{ width: 'auto', height: '100%', objectFit: 'contain' }} />
           </div>
-          <h2>Welcome to EngiBot</h2>
-          <p>Instant engineering intelligence & AI tutoring</p>
+
+          {authMode === 'register' ? (
+            regStep === 'verify-otp' ? (
+              <>
+                <h2>Verify Your Email</h2>
+                <p>Enter the 6-digit verification code to activate your account</p>
+              </>
+            ) : (
+              <>
+                <h2>Create Your Account</h2>
+                <p>Choose your engineering branch and verify your email</p>
+              </>
+            )
+          ) : (
+            <>
+              <h2>Welcome to EngiBot</h2>
+              <p>Instant engineering intelligence & AI tutoring</p>
+            </>
+          )}
 
           {/* Auth Mode Switcher Tabs */}
           {authMode !== 'register' && (
@@ -1162,7 +1365,27 @@ function App() {
               ) : (
                 <Sparkles size={16} style={{ flexShrink: 0 }} />
               )}
-              <span>{authAlert.text}</span>
+              <div style={{ flex: 1 }}>
+                <div>{authAlert.text}</div>
+                {authAlert.isUnregistered && (
+                  <div style={{ marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="save-btn"
+                      style={{ padding: '6px 14px', fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => {
+                        setAuthMode('register');
+                        setRegStep('form');
+                        setRegFormData(prev => ({ ...prev, email: emailInput.trim().toLowerCase() }));
+                        setAuthAlert(null);
+                      }}
+                    >
+                      <UserPlus size={14} />
+                      <span>Create New Account</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1278,7 +1501,7 @@ function App() {
 
           {/* 2. PASSWORD LOGIN FLOW */}
           {authMode === 'login' && (
-            <form onSubmit={handlePasswordAuth} className="auth-form">
+            <form onSubmit={handlePasswordLogin} className="auth-form">
               <div className="input-with-icon">
                 <User size={18} className="input-icon" />
                 <input 
@@ -1305,21 +1528,63 @@ function App() {
             </form>
           )}
 
-          {/* 3. REGISTRATION FLOW */}
-          {authMode === 'register' && (
-            <form onSubmit={handlePasswordAuth} className="auth-form register-form-with-branch">
-              <input name="fullName" type="text" placeholder="Full Name" required />
+          {/* 3. REGISTRATION FLOW - STEP 1: FORM */}
+          {authMode === 'register' && regStep === 'form' && (
+            <form onSubmit={handleRegisterSendOtp} className="auth-form register-form-with-branch">
+              <input 
+                name="fullName" 
+                type="text" 
+                placeholder="Full Name" 
+                value={regFormData.fullName}
+                onChange={(e) => setRegFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                required 
+              />
               <div className="input-with-icon">
                 <Mail size={18} className="input-icon" />
-                <input name="email" type="email" placeholder="Email Address (for OTP Login)" required />
+                <input 
+                  name="email" 
+                  type="email" 
+                  placeholder="Email Address (for Verification & OTP Login)" 
+                  value={regFormData.email}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, email: e.target.value }))}
+                  required 
+                />
               </div>
               <div className="input-group">
                 <label htmlFor="dob" className="input-label">Date of Birth (Must be 18+)</label>
-                <input name="dob" id="dob" type="date" required />
+                <input 
+                  name="dob" 
+                  id="dob" 
+                  type="date" 
+                  value={regFormData.dob}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, dob: e.target.value }))}
+                  required 
+                />
               </div>
-              <input name="phone" type="tel" placeholder="Phone Number" required />
-              <input name="username" type="text" placeholder="Choose Username" required />
-              <input name="password" type="password" placeholder="Choose Password" required />
+              <input 
+                name="phone" 
+                type="tel" 
+                placeholder="Phone Number" 
+                value={regFormData.phone}
+                onChange={(e) => setRegFormData(prev => ({ ...prev, phone: e.target.value }))}
+                required 
+              />
+              <input 
+                name="username" 
+                type="text" 
+                placeholder="Choose Username" 
+                value={regFormData.username}
+                onChange={(e) => setRegFormData(prev => ({ ...prev, username: e.target.value }))}
+                required 
+              />
+              <input 
+                name="password" 
+                type="password" 
+                placeholder="Choose Password (min 4 chars)" 
+                value={regFormData.password}
+                onChange={(e) => setRegFormData(prev => ({ ...prev, password: e.target.value }))}
+                required 
+              />
 
               {/* Engineering Branch Selector */}
               <div className="auth-branch-section">
@@ -1340,7 +1605,10 @@ function App() {
                         key={d.id}
                         type="button"
                         className={`auth-branch-pill-btn ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setRegisterBranch(d.id)}
+                        onClick={() => {
+                          setRegisterBranch(d.id);
+                          setRegFormData(prev => ({ ...prev, discipline: d.id }));
+                        }}
                       >
                         <Icon size={15} className="branch-pill-btn-icon" />
                         <span className="branch-pill-btn-text">{d.name}</span>
@@ -1354,9 +1622,103 @@ function App() {
                 </div>
               </div>
 
-              <button type="submit" className="save-btn" disabled={isAuthenticating}>
-                {isAuthenticating ? 'Creating Account...' : 'Create Account'}
+              <button type="submit" className="save-btn" disabled={isSendingRegOtp}>
+                {isSendingRegOtp ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={16} className="spinner" /> Sending Verification Code...
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    Continue to Email Verification <ArrowRight size={16} />
+                  </span>
+                )}
               </button>
+            </form>
+          )}
+
+          {/* 3. REGISTRATION FLOW - STEP 2: VERIFY OTP */}
+          {authMode === 'register' && regStep === 'verify-otp' && (
+            <form onSubmit={handleRegisterVerifyOtp} className="auth-form">
+              <div className="auth-badge-icon">
+                <ShieldCheck size={24} />
+              </div>
+
+              <div className="otp-email-chip">
+                <Mail size={14} />
+                <span>{regFormData.email}</span>
+                <button
+                  type="button"
+                  className="otp-edit-btn"
+                  onClick={() => { setRegStep('form'); setAuthAlert(null); }}
+                  title="Edit details"
+                >
+                  <Edit3 size={12} /> Edit
+                </button>
+              </div>
+
+              <div className="auth-branch-footer-note" style={{ textAlign: 'center', borderTop: 'none', padding: '0 0 8px' }}>
+                Engineering Branch: <strong>{DISCIPLINES.find(d => d.id === (registerBranch || regFormData.discipline))?.name}</strong>
+              </div>
+
+              <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Enter the 6-digit verification code sent to your email to create and activate your account.
+              </p>
+
+              <input
+                name="regOtpCode"
+                type="text"
+                className="otp-code-input"
+                placeholder="••••••"
+                maxLength={6}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="one-time-code"
+                value={regOtpInput}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 6)
+                  setRegOtpInput(val)
+                }}
+                required
+                autoFocus
+              />
+
+              <button 
+                type="submit" 
+                className="save-btn" 
+                disabled={isVerifyingRegOtp || regOtpInput.length < 6}
+              >
+                {isVerifyingRegOtp ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <RefreshCw size={16} className="spinner" /> Creating Account...
+                  </span>
+                ) : (
+                  'Verify & Create Account'
+                )}
+              </button>
+
+              <div className="resend-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="resend-btn"
+                  onClick={() => { setRegStep('form'); setAuthAlert(null); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <ArrowLeft size={13} /> Back to Edit
+                </button>
+
+                {regCountdown > 0 ? (
+                  <span>Resend code in <strong>{regCountdown}s</strong></span>
+                ) : (
+                  <button
+                    type="button"
+                    className="resend-btn"
+                    onClick={handleRegisterSendOtp}
+                    disabled={isSendingRegOtp}
+                  >
+                    <RefreshCw size={13} className={isSendingRegOtp ? "spinner" : ""} /> Resend OTP
+                  </button>
+                )}
+              </div>
             </form>
           )}
 
@@ -1371,6 +1733,7 @@ function App() {
                   onClick={() => { 
                     setAuthMode('otp'); 
                     setOtpStep('enter-email');
+                    setRegStep('form');
                     setAuthAlert(null); 
                   }}
                 >
@@ -1385,6 +1748,7 @@ function App() {
                   type="button"
                   onClick={() => { 
                     setAuthMode('register'); 
+                    setRegStep('form');
                     setAuthAlert(null); 
                   }}
                 >

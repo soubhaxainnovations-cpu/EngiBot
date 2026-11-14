@@ -354,6 +354,25 @@ class UserRegister(BaseModel):
     password: str
     discipline: Optional[str] = "general"
 
+class RegisterSendOTPRequest(BaseModel):
+    name: str
+    dob: str
+    phone_number: str
+    email: str
+    username: str
+    password: str
+    discipline: Optional[str] = "general"
+
+class RegisterVerifyOTPRequest(BaseModel):
+    name: str
+    dob: str
+    phone_number: str
+    email: str
+    username: str
+    password: str
+    discipline: Optional[str] = "general"
+    otp_code: str
+
 class OTPRequest(BaseModel):
     email: str
 
@@ -555,6 +574,132 @@ def register(auth: UserRegister, db: Session = Depends(get_db)):
         "preferred_mode": getattr(new_user, "preferred_mode", "learn") or "learn"
     }
 
+@app.post("/api/register/send-otp")
+def register_send_otp(req: RegisterSendOTPRequest, db: Session = Depends(get_db)):
+    username_clean = req.username.strip()
+    if not username_clean:
+        raise HTTPException(status_code=400, detail="Please choose a username.")
+    if db.query(User).filter(User.username == username_clean).first():
+        raise HTTPException(status_code=400, detail=f"Username '{username_clean}' is already taken. Please choose another username.")
+
+    email_clean = req.email.strip().lower()
+    if not email_clean or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_clean):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    if db.query(User).filter(User.email == email_clean).first():
+        raise HTTPException(status_code=400, detail="This email is already registered. Please sign in instead.")
+
+    if not req.password or len(req.password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+
+    try:
+        dob_date = datetime.strptime(req.dob, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    today = date.today()
+    age = today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
+    if age < 18:
+        raise HTTPException(status_code=400, detail="You must be at least 18 years old to register.")
+
+    # Generate 6-digit numeric OTP
+    otp_code = f"{secrets.randbelow(900000) + 100000}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    # Invalidate old unused OTPs for this email
+    db.query(EmailOTP).filter(
+        EmailOTP.email == email_clean,
+        EmailOTP.is_used == 0
+    ).update({"is_used": 2})
+
+    # Send email directly
+    mail_result = send_otp_email(email_clean, otp_code)
+    is_demo_mode = False
+
+    if not mail_result.get("sent"):
+        err = mail_result.get("error", "")
+        is_demo_mode = True
+        print(f"\n[REGISTRATION DEMO OTP] Email delivery unavailable ({err}). Verification Code for {email_clean} is: {otp_code}\n")
+
+    new_otp = EmailOTP(
+        email=email_clean,
+        otp_code=otp_code,
+        expires_at=expires_at,
+        is_used=0
+    )
+    db.add(new_otp)
+    db.commit()
+
+    if is_demo_mode:
+        reason = "Render Cloud notice" if "101" in str(mail_result.get("error", "")) else "Demo Mode"
+        return {
+            "status": "success",
+            "message": f"{reason}: Verification code is {otp_code} (Auto-filled below).",
+            "email": email_clean,
+            "demo_otp": otp_code
+        }
+
+    return {
+        "status": "success",
+        "message": f"Verification code sent to {email_clean}. Please check your mail inbox.",
+        "email": email_clean
+    }
+
+@app.post("/api/register/verify-otp")
+def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get_db)):
+    email_clean = req.email.strip().lower()
+    code_clean = req.otp_code.strip()
+
+    if not email_clean or not code_clean:
+        raise HTTPException(status_code=400, detail="Email and verification code are required.")
+
+    now = datetime.utcnow()
+    otp_record = db.query(EmailOTP).filter(
+        EmailOTP.email == email_clean,
+        EmailOTP.otp_code == code_clean,
+        EmailOTP.is_used == 0,
+        EmailOTP.expires_at >= now
+    ).order_by(EmailOTP.id.desc()).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code. Please request a new code.")
+
+    otp_record.is_used = 1
+    db.commit()
+
+    username_clean = req.username.strip()
+    if db.query(User).filter(User.username == username_clean).first():
+        raise HTTPException(status_code=400, detail=f"Username '{username_clean}' is already registered.")
+    if db.query(User).filter(User.email == email_clean).first():
+        raise HTTPException(status_code=400, detail="This email is already registered.")
+
+    try:
+        dob_date = datetime.strptime(req.dob, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    new_user = User(
+        name=req.name.strip(),
+        dob=dob_date,
+        phone_number=req.phone_number.strip(),
+        email=email_clean,
+        username=username_clean,
+        password=req.password.strip(),
+        discipline=req.discipline or "general"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "id": new_user.id,
+        "username": new_user.username,
+        "name": new_user.name,
+        "email": new_user.email,
+        "discipline": getattr(new_user, "discipline", "general") or "general",
+        "role": getattr(new_user, "role", "student") or "student",
+        "preferred_mode": getattr(new_user, "preferred_mode", "learn") or "learn"
+    }
+
 @app.post("/api/login")
 def login(auth: UserLogin, db: Session = Depends(get_db)):
     clean_identifier = auth.username.strip()
@@ -578,6 +723,14 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
     email_clean = request.email.strip().lower()
     if not email_clean or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_clean):
         raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+
+    # OTP Login is strictly for registered accounts
+    user = db.query(User).filter((User.email == email_clean) | (User.username == email_clean)).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account registered with this email address. Please click 'Create one now' to register your account."
+        )
 
     # Generate 6-digit numeric OTP
     otp_code = f"{secrets.randbelow(900000) + 100000}"
@@ -643,45 +796,29 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
     ).order_by(EmailOTP.id.desc()).first()
 
     if not otp_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP. Please request a new code.")
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP code. Please request a new code.")
 
     # Mark OTP as used
     otp_record.is_used = 1
     db.commit()
 
-    # Look for existing user with this email
-    user = db.query(User).filter(User.email == email_clean).first()
-
-    # If no match by email, check if there's a user whose username matches the email
+    # Look for existing user with this email or username (strictly registered accounts)
+    user = db.query(User).filter((User.email == email_clean) | (User.username == email_clean)).first()
     if not user:
-        user = db.query(User).filter(User.username == email_clean).first()
-        if user:
-            user.email = email_clean
-            db.commit()
-            db.refresh(user)
-
-    # If user doesn't exist yet, auto-create account for seamless frictionless onboarding
-    if not user:
-        prefix = email_clean.split("@")[0]
-        sanitized_username = re.sub(r"[^a-zA-Z0-9_]", "", prefix) or f"user_{secrets.randbelow(10000)}"
-        candidate_username = sanitized_username
-        suffix = 1
-        while db.query(User).filter(User.username == candidate_username).first():
-            candidate_username = f"{sanitized_username}_{suffix}"
-            suffix += 1
-
-        display_name = prefix.replace(".", " ").replace("_", " ").title()
-        user = User(
-            name=display_name,
-            dob=None,
-            phone_number=None,
-            email=email_clean,
-            username=candidate_username,
-            password=secrets.token_hex(8)
+        raise HTTPException(
+            status_code=404,
+            detail="No account registered with this email address. Please click 'Create one now' to register your account."
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "name": user.name or user.username,
+        "email": user.email,
+        "discipline": getattr(user, "discipline", "general") or "general",
+        "role": getattr(user, "role", "student") or "student",
+        "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
+    }
 
     return {
         "id": user.id,
