@@ -53,12 +53,12 @@ const MODEL_OPTIONS = [
 ]
 
 const DISCIPLINES = [
-  { id: 'general', name: 'General Engineering', icon: MessageSquare, prompt: 'You are an expert engineering assistant.', bgUrl: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2070&auto=format&fit=crop' },
-  { id: 'cse', name: 'Computer Science (CSE)', icon: Cpu, prompt: 'You are an expert Computer Science Engineer. Help with programming, algorithms, system design, and software engineering.', bgUrl: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?q=80&w=2070&auto=format&fit=crop' },
-  { id: 'civil', name: 'Civil Engineering', icon: HardHat, prompt: 'You are an expert Civil Engineer. Help with structural design, construction materials, fluid mechanics, and surveying.', bgUrl: 'https://images.unsplash.com/photo-1590486803833-1c5dc8ddd4c8?q=80&w=2070&auto=format&fit=crop' },
-  { id: 'ece', name: 'Electronics (ECE)', icon: Radio, prompt: 'You are an expert Electronics and Communication Engineer. Help with circuits, signals & systems, microprocessors, and communication theory.', bgUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2070&auto=format&fit=crop' },
-  { id: 'eee', name: 'Electrical (EEE)', icon: Zap, prompt: 'You are an expert Electrical Engineer. Help with power systems, electrical machines, control systems, and power electronics.', bgUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?q=80&w=2070&auto=format&fit=crop' },
-  { id: 'mech', name: 'Mechanical (Mech)', icon: Wrench, prompt: 'You are an expert Mechanical Engineer. Help with thermodynamics, solid mechanics, manufacturing, and machine design.', bgUrl: 'https://images.unsplash.com/photo-1581092334651-ddf26d9a09d0?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'general', name: 'General Engineering', icon: MessageSquare, desc: 'First-year Math, Physics, Chemistry, Mechanics & Graphics', prompt: 'You are an expert engineering assistant.', bgUrl: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'cse', name: 'Computer Science (CSE)', icon: Cpu, desc: 'Programming, Data Structures, Algorithms, Web/Cloud, DBMS, OS & AI/ML', prompt: 'You are an expert Computer Science Engineer. Help with programming, algorithms, system design, and software engineering.', bgUrl: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'civil', name: 'Civil Engineering', icon: HardHat, desc: 'Structures, RCC, Concrete, Soil Mechanics, Surveying & IS 456', prompt: 'You are an expert Civil Engineer. Help with structural design, construction materials, fluid mechanics, and surveying.', bgUrl: 'https://images.unsplash.com/photo-1590486803833-1c5dc8ddd4c8?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'ece', name: 'Electronics (ECE)', icon: Radio, desc: 'Circuits, VLSI, Embedded Systems, Microprocessors, Signals & Antennas', prompt: 'You are an expert Electronics and Communication Engineer. Help with circuits, signals & systems, microprocessors, and communication theory.', bgUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'eee', name: 'Electrical (EEE)', icon: Zap, desc: 'Power Systems, Machines, Control Systems, Cable Sizing & IS 7098', prompt: 'You are an expert Electrical Engineer. Help with power systems, electrical machines, control systems, and power electronics.', bgUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?q=80&w=2070&auto=format&fit=crop' },
+  { id: 'mech', name: 'Mechanical (Mech)', icon: Wrench, desc: 'Thermodynamics, Strength of Materials, Design, Manufacturing & ASME', prompt: 'You are an expert Mechanical Engineer. Help with thermodynamics, solid mechanics, manufacturing, and machine design.', bgUrl: 'https://images.unsplash.com/photo-1581092334651-ddf26d9a09d0?q=80&w=2070&auto=format&fit=crop' },
 ]
 
 const getBackgroundStyle = (bgUrl) => ({
@@ -90,7 +90,19 @@ function App() {
       return null
     }
   })
-  const [activeDiscipline, setActiveDiscipline] = useState(DISCIPLINES[0])
+  const [activeDiscipline, setActiveDiscipline] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chat_user')
+      if (saved) {
+        const u = JSON.parse(saved)
+        if (u.discipline) {
+          const found = DISCIPLINES.find(d => d.id === u.discipline)
+          if (found) return found
+        }
+      }
+    } catch {}
+    return DISCIPLINES[0]
+  })
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -130,9 +142,12 @@ function App() {
   // ChatGPT-style Conversation History state
   const [conversations, setConversations] = useState([])
   const [currentConversationId, setCurrentConversationId] = useState(null)
-  const [sidebarTab, setSidebarTab] = useState('history') // 'history' | 'branches'
   const [editingConvId, setEditingConvId] = useState(null)
   const [editingTitle, setEditingTitle] = useState('')
+
+  // Branch Selection & Specialization State
+  const [registerBranch, setRegisterBranch] = useState('cse')
+  const [showBranchModal, setShowBranchModal] = useState(false)
 
   // File Upload & Attachment State
   const fileInputRef = useRef(null)
@@ -310,6 +325,10 @@ function App() {
         setExperienceYears(data.experience_years || 0);
         if (data.preferred_mode) setActiveMode(data.preferred_mode);
         if (data.preferred_language) setLanguage(data.preferred_language);
+        if (data.discipline) {
+          const matchedBranch = DISCIPLINES.find(d => d.id === data.discipline);
+          if (matchedBranch) setActiveDiscipline(matchedBranch);
+        }
         
         // Show onboarding if not yet marked as onboarded
         if (!localStorage.getItem(`engibot_onboarded_${userId}`)) {
@@ -319,6 +338,29 @@ function App() {
     } catch (e) {
       console.error("Failed to load user profile:", e);
     }
+  };
+
+  const handleSelectBranch = async (discipline) => {
+    setActiveDiscipline(discipline);
+    setShowBranchModal(false);
+    if (user && user.id) {
+      try {
+        const updated = { ...user, discipline: discipline.id };
+        setUser(updated);
+        localStorage.setItem('chat_user', JSON.stringify(updated));
+        await fetch(`${API_BASE}/api/user/profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            discipline: discipline.id
+          })
+        });
+      } catch (err) {
+        console.warn('Could not save branch preference to database:', err);
+      }
+    }
+    handleNewChat(discipline);
   };
 
   const handleSaveOnboarding = async (e) => {
@@ -333,6 +375,7 @@ function App() {
           role: userRole,
           university: university,
           semester: parseInt(semester, 10),
+          discipline: activeDiscipline.id,
           experience_years: parseInt(experienceYears, 10),
           preferred_mode: activeMode,
           preferred_language: language
@@ -846,6 +889,10 @@ function App() {
       // Successful verification
       setUser(data)
       localStorage.setItem('chat_user', JSON.stringify(data))
+      if (data.discipline) {
+        const found = DISCIPLINES.find(d => d.id === data.discipline)
+        if (found) setActiveDiscipline(found)
+      }
       setAuthAlert(null)
       setIsServerOffline(false)
     } catch (err) {
@@ -874,6 +921,7 @@ function App() {
       payload.email = form.email.value.trim().toLowerCase()
       payload.dob = form.dob.value
       payload.phone_number = form.phone.value.trim()
+      payload.discipline = registerBranch || 'general'
     }
     
     payload.username = form.username.value.trim()
@@ -894,6 +942,10 @@ function App() {
 
       setUser(data)
       localStorage.setItem('chat_user', JSON.stringify(data))
+      if (data.discipline) {
+        const found = DISCIPLINES.find(d => d.id === data.discipline)
+        if (found) setActiveDiscipline(found)
+      }
       setIsServerOffline(false)
     } catch (err) {
       console.error(err)
@@ -1255,7 +1307,7 @@ function App() {
 
           {/* 3. REGISTRATION FLOW */}
           {authMode === 'register' && (
-            <form onSubmit={handlePasswordAuth} className="auth-form">
+            <form onSubmit={handlePasswordAuth} className="auth-form register-form-with-branch">
               <input name="fullName" type="text" placeholder="Full Name" required />
               <div className="input-with-icon">
                 <Mail size={18} className="input-icon" />
@@ -1268,6 +1320,45 @@ function App() {
               <input name="phone" type="tel" placeholder="Phone Number" required />
               <input name="username" type="text" placeholder="Choose Username" required />
               <input name="password" type="password" placeholder="Choose Password" required />
+
+              {/* Engineering Branch Selector */}
+              <div className="auth-branch-section">
+                <label className="auth-branch-header-label">
+                  <Layers size={15} />
+                  <span>Choose Your Engineering Branch</span>
+                </label>
+                <p className="auth-branch-subtext">
+                  Select your discipline. EngiBot's technical engine, calculations, and answers will specialize in this branch.
+                </p>
+                <div className="auth-branch-grid">
+                  {DISCIPLINES.map(d => {
+                    const Icon = d.icon;
+                    const isSelected = registerBranch === d.id;
+                    return (
+                      <div
+                        key={d.id}
+                        type="button"
+                        className={`auth-branch-card ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setRegisterBranch(d.id)}
+                      >
+                        <div className="auth-branch-card-icon">
+                          <Icon size={18} />
+                        </div>
+                        <div className="auth-branch-card-text">
+                          <div className="auth-branch-card-name">{d.name}</div>
+                          <div className="auth-branch-card-desc">{d.desc}</div>
+                        </div>
+                        {isSelected && (
+                          <div className="auth-branch-check">
+                            <Check size={14} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <button type="submit" className="save-btn" disabled={isAuthenticating}>
                 {isAuthenticating ? 'Creating Account...' : 'Create Account'}
               </button>
@@ -1330,150 +1421,114 @@ function App() {
           <span>New Chat</span>
         </button>
 
-        {/* Navigation Tabs: History & Branches */}
-        <div className="sidebar-tabs">
-          <button 
-            type="button"
-            className={`sidebar-tab ${sidebarTab === 'history' ? 'active' : ''}`}
-            onClick={() => setSidebarTab('history')}
-          >
-            <MessageSquare size={13} />
-            <span>Chats ({conversations.length})</span>
-          </button>
-          <button 
-            type="button"
-            className={`sidebar-tab ${sidebarTab === 'branches' ? 'active' : ''}`}
-            onClick={() => setSidebarTab('branches')}
-          >
-            <Layers size={13} />
-            <span>Branches</span>
-          </button>
+        {/* Conversation History Header */}
+        <div className="history-header-row">
+          <MessageSquare size={13} />
+          <span>Recent Chats ({conversations.length})</span>
         </div>
 
-        {/* Tab Content: History List */}
-        {sidebarTab === 'history' && (
-          <div className="history-list">
-            {conversations.length === 0 ? (
-              <div className="history-empty">
-                <MessageSquare size={26} opacity={0.35} />
-                <p>No chat history yet.<br />Ask your first question!</p>
-              </div>
-            ) : (
-              conversations.map(conv => {
-                const isActive = currentConversationId === conv.id;
-                const isEditing = editingConvId === conv.id;
+        {/* Tab Content: History List (Always Active) */}
+        <div className="history-list">
+          {conversations.length === 0 ? (
+            <div className="history-empty">
+              <MessageSquare size={26} opacity={0.35} />
+              <p>No chat history yet.<br />Ask your first question!</p>
+            </div>
+          ) : (
+            conversations.map(conv => {
+              const isActive = currentConversationId === conv.id;
+              const isEditing = editingConvId === conv.id;
 
-                return (
-                  <div
-                    key={conv.id}
-                    className={`history-item ${isActive ? 'active' : ''}`}
-                    onClick={() => !isEditing && handleSelectConversation(conv)}
-                  >
-                    <div className="history-item-icon">
-                      <MessageSquare size={15} />
-                    </div>
-
-                    {isEditing ? (
-                      <form 
-                        className="history-edit-form" 
-                        onSubmit={(e) => handleRenameConversation(conv.id, e)}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="text"
-                          className="history-edit-input"
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') setEditingConvId(null);
-                          }}
-                        />
-                        <button type="submit" className="history-action-btn" title="Save title">
-                          <Check size={13} color="#10b981" />
-                        </button>
-                        <button type="button" className="history-action-btn" onClick={() => setEditingConvId(null)} title="Cancel">
-                          <X size={13} color="#ef4444" />
-                        </button>
-                      </form>
-                    ) : (
-                      <>
-                        <div className="history-item-content">
-                          <span className="history-item-title" title={conv.title}>
-                            {conv.title}
-                          </span>
-                          <div className="history-item-meta">
-                            <span className="history-item-badge">{conv.discipline || 'general'}</span>
-                          </div>
-                        </div>
-
-                        <div className="history-item-actions">
-                          <button
-                            type="button"
-                            className="history-action-btn"
-                            title="Rename chat"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingConvId(conv.id);
-                              setEditingTitle(conv.title);
-                            }}
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="history-action-btn delete"
-                            title="Delete chat"
-                            onClick={(e) => handleDeleteConversation(conv.id, e)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </>
-                    )}
+              return (
+                <div
+                  key={conv.id}
+                  className={`history-item ${isActive ? 'active' : ''}`}
+                  onClick={() => !isEditing && handleSelectConversation(conv)}
+                >
+                  <div className="history-item-icon">
+                    <MessageSquare size={15} />
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
 
-        {/* Tab Content: Engineering Branches */}
-        {sidebarTab === 'branches' && (
-          <div className="discipline-list">
-            {DISCIPLINES.map(discipline => (
-              <button
-                key={discipline.id}
-                className={`discipline-btn ${activeDiscipline.id === discipline.id ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveDiscipline(discipline);
-                  if (!currentConversationId) {
-                    handleNewChat(discipline);
-                  }
-                }}
-              >
-                {(() => {
-                  const Icon = discipline.icon;
-                  return <Icon size={18} className="icon" />;
-                })()}
-                {discipline.name}
-              </button>
-            ))}
-          </div>
-        )}
+                  {isEditing ? (
+                    <form 
+                      className="history-edit-form" 
+                      onSubmit={(e) => handleRenameConversation(conv.id, e)}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="text"
+                        className="history-edit-input"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') setEditingConvId(null);
+                        }}
+                      />
+                      <button type="submit" className="history-action-btn" title="Save title">
+                        <Check size={13} color="#10b981" />
+                      </button>
+                      <button type="button" className="history-action-btn" onClick={() => setEditingConvId(null)} title="Cancel">
+                        <X size={13} color="#ef4444" />
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="history-item-content">
+                        <span className="history-item-title" title={conv.title}>
+                          {conv.title}
+                        </span>
+                        <div className="history-item-meta">
+                          <span className="history-item-badge">{conv.discipline || 'general'}</span>
+                        </div>
+                      </div>
+
+                      <div className="history-item-actions">
+                        <button
+                          type="button"
+                          className="history-action-btn"
+                          title="Rename chat"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingConvId(conv.id);
+                            setEditingTitle(conv.title);
+                          }}
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="history-action-btn delete"
+                          title="Delete chat"
+                          onClick={(e) => handleDeleteConversation(conv.id, e)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
         
         <div className="user-profile">
           <div className="user-info">
             <User size={18} style={{ flexShrink: 0 }} />
-            <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', overflow: 'hidden', flex: 1 }}>
               <span style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                 {user.name || user.username}
               </span>
-              {user.email && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                  {user.email}
-                </span>
-              )}
+              <div 
+                className="user-profile-branch-badge"
+                onClick={() => setShowBranchModal(true)}
+                title="Your active engineering branch. Click to switch."
+              >
+                <activeDiscipline.icon size={11} />
+                <span>{activeDiscipline.name}</span>
+                <ChevronDown size={11} className="branch-badge-arrow" />
+              </div>
             </div>
           </div>
           <button className="logout-btn" onClick={handleLogout} title="Logout">
@@ -1497,18 +1552,33 @@ function App() {
 
         <header className="chat-header">
           <div className="header-info">
-            <h2>
-              {currentConversationId ? (
-                conversations.find(c => c.id === currentConversationId)?.title || `${activeDiscipline.name} Expert`
-              ) : (
-                `${activeDiscipline.name} Expert`
-              )}
-            </h2>
+            <div className="header-title-row">
+              <h2>
+                {currentConversationId ? (
+                  conversations.find(c => c.id === currentConversationId)?.title || `${activeDiscipline.name} Expert`
+                ) : (
+                  `${activeDiscipline.name} Expert`
+                )}
+              </h2>
+              <button 
+                type="button" 
+                className="header-branch-pill" 
+                onClick={() => setShowBranchModal(true)}
+                title="Your active engineering discipline. Click to switch branch."
+              >
+                {(() => {
+                  const Icon = activeDiscipline.icon;
+                  return <Icon size={14} className="branch-pill-icon" />;
+                })()}
+                <span>{activeDiscipline.name}</span>
+                <ChevronDown size={13} className="branch-pill-arrow" />
+              </button>
+            </div>
             <p>
               {currentConversationId ? (
-                <span>Branch: <strong>{activeDiscipline.name}</strong> • Conversation active</span>
+                <span>Branch: <strong>{activeDiscipline.name}</strong> • Specialized engineering assistant</span>
               ) : (
-                `Ask anything related to ${activeDiscipline.name.toLowerCase()}`
+                `Specialized ${activeDiscipline.name} problem-solving, standard citations & calculations`
               )}
             </p>
           </div>
@@ -2031,6 +2101,29 @@ function App() {
                 </div>
               </div>
 
+              <div style={{ marginBottom: '1.25rem', textAlign: 'left' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  Select Your Engineering Branch
+                </label>
+                <div className="onboarding-branch-grid">
+                  {DISCIPLINES.map(d => {
+                    const Icon = d.icon;
+                    const isSelected = activeDiscipline.id === d.id;
+                    return (
+                      <div 
+                        key={d.id}
+                        type="button"
+                        className={`onboarding-branch-card ${isSelected ? 'active' : ''}`}
+                        onClick={() => setActiveDiscipline(d)}
+                      >
+                        <Icon size={16} />
+                        <span>{d.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {userRole === 'student' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
                   <div className="calc-field">
@@ -2103,6 +2196,51 @@ function App() {
                 Save & Start Using EngiBot
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Engineering Branch Switcher Modal */}
+      {showBranchModal && (
+        <div className="modal-overlay" onClick={() => setShowBranchModal(false)}>
+          <div className="modal-content medium-dialog branch-switcher-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowBranchModal(false)} aria-label="Close modal">
+              <X size={20} />
+            </button>
+            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+              <div className="auth-badge-icon" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                <Layers size={26} />
+              </div>
+              <h3>Select Engineering Branch</h3>
+              <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', maxWidth: '440px', margin: '0.35rem auto 0' }}>
+                EngiBot answers questions, solves problems, and cites codes strictly according to your selected discipline.
+              </p>
+            </div>
+
+            <div className="branch-modal-grid">
+              {DISCIPLINES.map(d => {
+                const Icon = d.icon;
+                const isCurrent = activeDiscipline.id === d.id;
+                return (
+                  <div
+                    key={d.id}
+                    className={`branch-modal-card ${isCurrent ? 'active' : ''}`}
+                    onClick={() => handleSelectBranch(d)}
+                  >
+                    <div className="branch-modal-card-top">
+                      <div className="branch-modal-icon">
+                        <Icon size={22} />
+                      </div>
+                      <div className="branch-modal-title">
+                        <h4>{d.name}</h4>
+                        {isCurrent && <span className="branch-active-pill">Active Branch</span>}
+                      </div>
+                    </div>
+                    <p className="branch-modal-desc">{d.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

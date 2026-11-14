@@ -17,7 +17,7 @@ import json
 from dotenv import load_dotenv
 
 from mailer import send_otp_email
-from prompts import build_system_prompt
+from prompts import build_system_prompt, detect_branch_mismatch, format_branch_mismatch_response, DISCIPLINE_METADATA
 import calculators
 
 # Directory for user-uploaded images, videos, and files
@@ -352,6 +352,7 @@ class UserRegister(BaseModel):
     email: Optional[str] = None
     username: str
     password: str
+    discipline: Optional[str] = "general"
 
 class OTPRequest(BaseModel):
     email: str
@@ -538,7 +539,8 @@ def register(auth: UserRegister, db: Session = Depends(get_db)):
         phone_number=auth.phone_number,
         email=email_clean,
         username=auth.username,
-        password=auth.password
+        password=auth.password,
+        discipline=auth.discipline or "general"
     )
     db.add(new_user)
     db.commit()
@@ -547,7 +549,10 @@ def register(auth: UserRegister, db: Session = Depends(get_db)):
         "id": new_user.id, 
         "username": new_user.username, 
         "name": new_user.name,
-        "email": new_user.email
+        "email": new_user.email,
+        "discipline": getattr(new_user, "discipline", "general") or "general",
+        "role": getattr(new_user, "role", "student") or "student",
+        "preferred_mode": getattr(new_user, "preferred_mode", "learn") or "learn"
     }
 
 @app.post("/api/login")
@@ -562,7 +567,10 @@ def login(auth: UserLogin, db: Session = Depends(get_db)):
         "id": user.id, 
         "username": user.username, 
         "name": user.name,
-        "email": user.email
+        "email": user.email,
+        "discipline": getattr(user, "discipline", "general") or "general",
+        "role": getattr(user, "role", "student") or "student",
+        "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
     }
 
 @app.post("/api/otp/send")
@@ -679,7 +687,10 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
         "id": user.id,
         "username": user.username,
         "name": user.name or user.username,
-        "email": user.email
+        "email": user.email,
+        "discipline": getattr(user, "discipline", "general") or "general",
+        "role": getattr(user, "role", "student") or "student",
+        "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
     }
 
 def generate_ai_response(
@@ -1045,6 +1056,33 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
         db.add(user_msg)
         db.commit()
+
+        # Strict Engineering Branch Domain Boundary Check
+        # Example: Reject Civil questions asked in Computer Science (CSE), or CSE coding in Civil
+        branch_mismatch = detect_branch_mismatch(request.message or "", request.discipline)
+        if branch_mismatch:
+            refusal_text = format_branch_mismatch_response(branch_mismatch)
+            ai_msg = ChatMessage(
+                user_id=request.user_id,
+                conversation_id=conv.id,
+                role="ai",
+                content=refusal_text,
+                discipline=request.discipline,
+                mode=active_mode,
+                language=active_lang,
+                model="Branch Boundary Guard"
+            )
+            db.add(ai_msg)
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            return {
+                "response": refusal_text,
+                "model_used": "Branch Boundary Guard",
+                "conversation_id": conv.id,
+                "title": conv.title,
+                "discipline": conv.discipline,
+                "mode": active_mode
+            }
 
         # Augment prompt if attachment is provided
         augmented_prompt = request.message or ""
