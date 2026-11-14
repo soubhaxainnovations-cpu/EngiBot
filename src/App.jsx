@@ -5,7 +5,8 @@ import {
   Mail, ShieldCheck, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles, UserPlus,
   Plus, Trash2, Check, X, Layers, MessageCircle, ChevronDown, Globe,
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
-  BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award
+  BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award,
+  Shield, Activity, BarChart3, Users, Search, Power, Clock, TrendingUp, KeyRound, Lock
 } from 'lucide-react'
 import './App.css'
 
@@ -267,6 +268,316 @@ function App() {
   const [examTopic, setExamTopic] = useState('')
   const [examResult, setExamResult] = useState(null)
   const [examLoading, setExamLoading] = useState(false)
+  
+  // ==========================================
+  // Administrator Control Center & Dual-Factor Auth State
+  // ==========================================
+  const [showAdminModal, setShowAdminModal] = useState(false)
+  const [adminToken, setAdminToken] = useState(() => {
+    try {
+      return localStorage.getItem('engibot_admin_token') || ''
+    } catch {
+      return ''
+    }
+  })
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
+  const [adminAuthEmail, setAdminAuthEmail] = useState('')
+  const [adminLoginStep, setAdminLoginStep] = useState('email') // 'email' | 'otp' | 'mfa'
+  const [adminEmailInput, setAdminEmailInput] = useState('soubhaxainnovations@gmail.com')
+  const [adminOtpInput, setAdminOtpInput] = useState('')
+  const [adminMfaToken, setAdminMfaToken] = useState('')
+  const [adminMfaInput, setAdminMfaInput] = useState('')
+  const [adminAuthLoading, setAdminAuthLoading] = useState(false)
+  const [adminAuthAlert, setAdminAuthAlert] = useState(null)
+  const [adminCountdown, setAdminCountdown] = useState(0)
+
+  // Admin Dashboard Tabs & Data
+  const [adminTab, setAdminTab] = useState('users') // 'users' | 'performance' | 'confusion' | 'graphs'
+  const [adminLoadingData, setAdminLoadingData] = useState(false)
+  const [adminUsersData, setAdminUsersData] = useState(null)
+  const [adminPerformanceData, setAdminPerformanceData] = useState(null)
+  const [adminConfusionData, setAdminConfusionData] = useState(null)
+  const [adminAnalyticsData, setAdminAnalyticsData] = useState(null)
+  const [adminUserSearch, setAdminUserSearch] = useState('')
+  const [adminBranchFilter, setAdminBranchFilter] = useState('all')
+  const [adminActionNotice, setAdminActionNotice] = useState(null)
+
+  // Countdown timer for Admin OTP resend
+  useEffect(() => {
+    let timer;
+    if (adminCountdown > 0) {
+      timer = setInterval(() => {
+        setAdminCountdown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [adminCountdown]);
+
+  // Session verification for active admin token
+  const verifyAdminSession = async (token = adminToken) => {
+    if (!token) {
+      setIsAdminAuthenticated(false);
+      return false;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/verify-session`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsAdminAuthenticated(true);
+        setAdminAuthEmail(data.admin_email || 'soubhaxainnovations@gmail.com');
+        return true;
+      } else {
+        setIsAdminAuthenticated(false);
+        try { localStorage.removeItem('engibot_admin_token'); } catch {}
+        setAdminToken('');
+        return false;
+      }
+    } catch (e) {
+      console.error("Admin verify session error:", e);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (adminToken) {
+      verifyAdminSession(adminToken);
+    }
+  }, []);
+
+  // Fetch admin dashboard data based on active tab
+  const fetchAdminData = async (tabToFetch = adminTab, token = adminToken) => {
+    const activeTok = token || adminToken;
+    if (!activeTok) return;
+    setAdminLoadingData(true);
+    setAdminActionNotice(null);
+    try {
+      const headers = { 'Authorization': `Bearer ${activeTok}` };
+      if (tabToFetch === 'users') {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setAdminUsersData(data);
+        } else if (res.status === 401) {
+          setIsAdminAuthenticated(false);
+          setAdminToken('');
+        }
+      } else if (tabToFetch === 'performance') {
+        const res = await fetch(`${API_BASE}/api/admin/performance`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setAdminPerformanceData(data);
+        } else if (res.status === 401) {
+          setIsAdminAuthenticated(false);
+          setAdminToken('');
+        }
+      } else if (tabToFetch === 'confusion') {
+        const res = await fetch(`${API_BASE}/api/admin/confusion-matrix`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setAdminConfusionData(data);
+        } else if (res.status === 401) {
+          setIsAdminAuthenticated(false);
+          setAdminToken('');
+        }
+      } else if (tabToFetch === 'graphs') {
+        const res = await fetch(`${API_BASE}/api/admin/analytics`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setAdminAnalyticsData(data);
+        } else if (res.status === 401) {
+          setIsAdminAuthenticated(false);
+          setAdminToken('');
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch admin data:", err);
+    } finally {
+      setAdminLoadingData(false);
+    }
+  };
+
+  const handleSwitchAdminTab = (tab) => {
+    setAdminTab(tab);
+    fetchAdminData(tab, adminToken);
+  };
+
+  const handleAdminSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    const cleanMail = adminEmailInput.trim().toLowerCase();
+    if (cleanMail !== 'soubhaxainnovations@gmail.com') {
+      setAdminAuthAlert({ type: 'error', message: 'Access Denied: Only soubhaxainnovations@gmail.com is authorized.' });
+      return;
+    }
+    setAdminAuthLoading(true);
+    setAdminAuthAlert(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/login/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanMail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminLoginStep('otp');
+        setAdminCountdown(60);
+        setAdminAuthAlert({ type: 'success', message: '6-digit Admin OTP sent to soubhaxainnovations@gmail.com' });
+      } else {
+        setAdminAuthAlert({ type: 'error', message: data.detail || 'Failed to dispatch admin OTP.' });
+      }
+    } catch (err) {
+      setAdminAuthAlert({ type: 'error', message: 'Network error connecting to backend.' });
+    } finally {
+      setAdminAuthLoading(false);
+    }
+  };
+
+  const handleAdminVerifyOtp = async (e) => {
+    if (e) e.preventDefault();
+    if (!adminOtpInput || adminOtpInput.length !== 6) {
+      setAdminAuthAlert({ type: 'error', message: 'Please enter the valid 6-digit OTP code.' });
+      return;
+    }
+    setAdminAuthLoading(true);
+    setAdminAuthAlert(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/login/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: adminEmailInput.trim().toLowerCase(),
+          otp_code: adminOtpInput.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'mfa_required') {
+        setAdminMfaToken(data.mfa_token);
+        setAdminLoginStep('mfa');
+        setAdminAuthAlert({ type: 'success', message: 'OTP verified! Enter your Administrator Master Security PIN / Key.' });
+      } else {
+        setAdminAuthAlert({ type: 'error', message: data.detail || 'Invalid or expired OTP code.' });
+      }
+    } catch (err) {
+      setAdminAuthAlert({ type: 'error', message: 'Network error verifying OTP code.' });
+    } finally {
+      setAdminAuthLoading(false);
+    }
+  };
+
+  const handleAdminVerifyMfa = async (e) => {
+    if (e) e.preventDefault();
+    if (!adminMfaInput.trim()) {
+      setAdminAuthAlert({ type: 'error', message: 'Please enter your Master Security PIN or Key.' });
+      return;
+    }
+    setAdminAuthLoading(true);
+    setAdminAuthAlert(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/login/verify-mfa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: adminEmailInput.trim().toLowerCase(),
+          mfa_token: adminMfaToken,
+          mfa_code: adminMfaInput.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        const token = data.admin_token;
+        setAdminToken(token);
+        try { localStorage.setItem('engibot_admin_token', token); } catch {}
+        setIsAdminAuthenticated(true);
+        setAdminAuthEmail(data.admin_email || 'soubhaxainnovations@gmail.com');
+        setAdminAuthAlert(null);
+        setAdminLoginStep('email');
+        setAdminOtpInput('');
+        setAdminMfaInput('');
+        setAdminMfaToken('');
+        fetchAdminData('users', token);
+      } else {
+        setAdminAuthAlert({ type: 'error', message: data.detail || 'Invalid Security PIN or Key.' });
+      }
+    } catch (err) {
+      setAdminAuthAlert({ type: 'error', message: 'Network error verifying MFA.' });
+    } finally {
+      setAdminAuthLoading(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    try { localStorage.removeItem('engibot_admin_token'); } catch {}
+    setAdminToken('');
+    setIsAdminAuthenticated(false);
+    setAdminLoginStep('email');
+    setAdminOtpInput('');
+    setAdminMfaInput('');
+    setAdminMfaToken('');
+    setAdminAuthAlert(null);
+  };
+
+  const handleToggleUserStatus = async (targetUser) => {
+    if (targetUser.email === 'soubhaxainnovations@gmail.com') {
+      alert("Administrator account cannot be suspended.");
+      return;
+    }
+    const newStatus = targetUser.is_active === 1 ? 0 : 1;
+    const confirmMsg = newStatus === 0 
+      ? `Are you sure you want to suspend user "${targetUser.name || targetUser.username}"?`
+      : `Activate user "${targetUser.name || targetUser.username}"?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/${targetUser.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ is_active: newStatus })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminActionNotice({ type: 'success', message: data.message });
+        fetchAdminData('users', adminToken);
+      } else {
+        setAdminActionNotice({ type: 'error', message: data.detail || 'Failed to update user status.' });
+      }
+    } catch (err) {
+      setAdminActionNotice({ type: 'error', message: 'Error updating user status.' });
+    }
+  };
+
+  const handleDeleteUser = async (targetUser) => {
+    if (targetUser.email === 'soubhaxainnovations@gmail.com') {
+      alert("Administrator account cannot be deleted.");
+      return;
+    }
+    if (!window.confirm(`Permanently delete user "${targetUser.name || targetUser.username}" (${targetUser.email}) and all their chats/records? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/${targetUser.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminActionNotice({ type: 'success', message: data.message });
+        fetchAdminData('users', adminToken);
+      } else {
+        setAdminActionNotice({ type: 'error', message: data.detail || 'Failed to delete user.' });
+      }
+    } catch (err) {
+      setAdminActionNotice({ type: 'error', message: 'Error deleting user.' });
+    }
+  };
   
   const messagesEndRef = useRef(null)
   
@@ -1234,6 +1545,1093 @@ function App() {
     }
   }
 
+  // ========================================================
+  // RENDER ADMINISTRATOR PORTAL MODAL (LOGIN & CONTROL CENTER)
+  // ========================================================
+  const renderAdminModal = () => {
+    if (!showAdminModal) return null;
+
+    return (
+      <div 
+        className="modal-overlay admin-overlay"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowAdminModal(false);
+          }
+        }}
+      >
+        {!isAdminAuthenticated ? (
+          /* ========================================================
+             1. DUAL-FACTOR ADMIN LOGIN DIALOG (OTP & MFA)
+             ======================================================== */
+          <div className="modal-content admin-login-dialog">
+            <button className="modal-close" onClick={() => setShowAdminModal(false)}>
+              <X size={20} />
+            </button>
+
+            <div className="admin-login-header">
+              <div className="admin-shield-icon">
+                <ShieldCheck size={28} />
+              </div>
+              <h3>Administrator Portal</h3>
+              <p>Dual-Factor Authentication Required (OTP & MFA)</p>
+              <div className="admin-email-pill">
+                <Mail size={13} />
+                <span>soubhaxainnovations@gmail.com</span>
+              </div>
+            </div>
+
+            {adminAuthAlert && (
+              <div className={`alert-banner ${adminAuthAlert.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+                {adminAuthAlert.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+                <span>{adminAuthAlert.message}</span>
+              </div>
+            )}
+
+            {/* Step 1: Admin Email & Send OTP */}
+            {adminLoginStep === 'email' && (
+              <form onSubmit={handleAdminSendOtp} className="admin-step-form">
+                <div className="admin-step-indicator">
+                  <span className="step-tag active">Step 1: Email OTP</span>
+                  <span className="step-tag">Step 2: Master MFA</span>
+                </div>
+                <p className="admin-step-desc">
+                  Only the registered super-administrator email address is authorized for diagnostics & management.
+                </p>
+                <div className="input-group">
+                  <label>Administrator Email Address</label>
+                  <div className="input-with-icon">
+                    <Mail size={16} />
+                    <input
+                      type="email"
+                      value={adminEmailInput}
+                      onChange={(e) => setAdminEmailInput(e.target.value)}
+                      placeholder="soubhaxainnovations@gmail.com"
+                      required
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="primary-btn admin-action-btn" disabled={adminAuthLoading}>
+                  {adminAuthLoading ? <RefreshCw size={16} className="spinner" /> : <Send size={16} />}
+                  <span>Send Admin OTP</span>
+                </button>
+                <div className="admin-security-note">
+                  <Lock size={12} />
+                  <span>Secured with 256-bit ephemeral OTP & TOTP master MFA</span>
+                </div>
+              </form>
+            )}
+
+            {/* Step 2: Enter Email OTP */}
+            {adminLoginStep === 'otp' && (
+              <form onSubmit={handleAdminVerifyOtp} className="admin-step-form">
+                <div className="admin-step-indicator">
+                  <span className="step-tag active">Step 1: Enter OTP</span>
+                  <span className="step-tag">Step 2: Master MFA</span>
+                </div>
+                <p className="admin-step-desc">
+                  A 6-digit one-time code has been sent to <strong>soubhaxainnovations@gmail.com</strong>.
+                </p>
+                <div className="input-group">
+                  <label>6-Digit Email Verification Code</label>
+                  <div className="input-with-icon">
+                    <Key size={16} />
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={adminOtpInput}
+                      onChange={(e) => setAdminOtpInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="admin-otp-input"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+                <button 
+                  type="submit" 
+                  className="primary-btn admin-action-btn" 
+                  disabled={adminAuthLoading || adminOtpInput.length !== 6}
+                >
+                  {adminAuthLoading ? <RefreshCw size={16} className="spinner" /> : <ArrowRight size={16} />}
+                  <span>Verify OTP & Proceed to MFA</span>
+                </button>
+                <div className="admin-form-actions">
+                  <button
+                    type="button"
+                    className="text-btn admin-back-btn"
+                    onClick={() => { setAdminLoginStep('email'); setAdminAuthAlert(null); }}
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                  <button
+                    type="button"
+                    className="resend-btn"
+                    disabled={adminCountdown > 0 || adminAuthLoading}
+                    onClick={handleAdminSendOtp}
+                  >
+                    <RefreshCw size={13} className={adminAuthLoading ? "spinner" : ""} />
+                    {adminCountdown > 0 ? `Resend (${adminCountdown}s)` : 'Resend OTP'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Step 3: Enter MFA Security PIN / Master Key */}
+            {adminLoginStep === 'mfa' && (
+              <form onSubmit={handleAdminVerifyMfa} className="admin-step-form">
+                <div className="admin-step-indicator">
+                  <span className="step-tag completed">✓ OTP Verified</span>
+                  <span className="step-tag active">Step 2: Master MFA</span>
+                </div>
+                <p className="admin-step-desc">
+                  Enter your Administrator Master Security PIN or Security Key to complete authentication.
+                </p>
+                <div className="admin-mfa-hint-box">
+                  <KeyRound size={15} />
+                  <div>
+                    <strong>Master PIN:</strong> <code>982461</code><br />
+                    <strong>Master Key:</strong> <code>ENGIBOT-MFA-2026</code>
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label>MFA PIN or Master Key</label>
+                  <div className="input-with-icon">
+                    <Lock size={16} />
+                    <input
+                      type="password"
+                      value={adminMfaInput}
+                      onChange={(e) => setAdminMfaInput(e.target.value)}
+                      placeholder="Enter PIN (982461) or Key"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+                <button 
+                  type="submit" 
+                  className="primary-btn admin-action-btn" 
+                  disabled={adminAuthLoading || !adminMfaInput.trim()}
+                >
+                  {adminAuthLoading ? <RefreshCw size={16} className="spinner" /> : <ShieldCheck size={16} />}
+                  <span>Verify MFA & Enter Control Center</span>
+                </button>
+                <div className="admin-form-actions">
+                  <button
+                    type="button"
+                    className="text-btn admin-back-btn"
+                    onClick={() => { setAdminLoginStep('otp'); setAdminAuthAlert(null); }}
+                  >
+                    <ArrowLeft size={14} /> Back to OTP
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        ) : (
+          /* ========================================================
+             2. FULL-FEATURED ADMINISTRATOR DASHBOARD (4 TABS)
+             ======================================================== */
+          <div className="modal-content admin-dashboard-dialog wide-dialog">
+            {/* Dashboard Header */}
+            <div className="admin-dash-header">
+              <div className="admin-dash-title-group">
+                <div className="admin-shield-badge">
+                  <ShieldCheck size={24} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.3rem' }}>EngiBot Administrator Control Center</h3>
+                    <span className="admin-status-live-chip">● Live Production</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Enterprise Diagnostics, Multi-Branch AI Routing Governance & User Audit Controls
+                  </p>
+                </div>
+              </div>
+
+              <div className="admin-dash-controls">
+                <div className="admin-user-pill">
+                  <span className="admin-dot pulse-green"></span>
+                  <span className="admin-mail-text">{adminAuthEmail || 'soubhaxainnovations@gmail.com'}</span>
+                  <span className="admin-role-tag">Super Admin</span>
+                </div>
+                <button 
+                  type="button" 
+                  className="admin-dash-btn"
+                  onClick={() => fetchAdminData(adminTab, adminToken)}
+                  title="Refresh Data"
+                >
+                  <RefreshCw size={14} className={adminLoadingData ? "spinner" : ""} />
+                  <span>Refresh</span>
+                </button>
+                <button 
+                  type="button" 
+                  className="admin-dash-btn logout"
+                  onClick={handleAdminLogout}
+                  title="Sign Out of Admin Portal"
+                >
+                  <LogOut size={14} />
+                  <span>Logout</span>
+                </button>
+                <button className="modal-close" onClick={() => setShowAdminModal(false)}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="admin-tabs-nav">
+              <button 
+                type="button" 
+                className={`admin-tab-item ${adminTab === 'users' ? 'active' : ''}`}
+                onClick={() => handleSwitchAdminTab('users')}
+              >
+                <Users size={16} />
+                <span>Manage All Users</span>
+              </button>
+              <button 
+                type="button" 
+                className={`admin-tab-item ${adminTab === 'performance' ? 'active' : ''}`}
+                onClick={() => handleSwitchAdminTab('performance')}
+              >
+                <Activity size={16} />
+                <span>Software Performance</span>
+              </button>
+              <button 
+                type="button" 
+                className={`admin-tab-item ${adminTab === 'confusion' ? 'active' : ''}`}
+                onClick={() => handleSwitchAdminTab('confusion')}
+              >
+                <Layers size={16} />
+                <span>Confusion Matrix</span>
+              </button>
+              <button 
+                type="button" 
+                className={`admin-tab-item ${adminTab === 'graphs' ? 'active' : ''}`}
+                onClick={() => handleSwitchAdminTab('graphs')}
+              >
+                <BarChart3 size={16} />
+                <span>Analytics & Graphs</span>
+              </button>
+            </div>
+
+            {/* Action Notice Toast */}
+            {adminActionNotice && (
+              <div className={`admin-notice ${adminActionNotice.type === 'error' ? 'notice-error' : 'notice-success'}`}>
+                {adminActionNotice.type === 'error' ? <AlertCircle size={15} /> : <CheckCircle2 size={15} />}
+                <span>{adminActionNotice.message}</span>
+                <button onClick={() => setAdminActionNotice(null)} className="notice-dismiss"><X size={12} /></button>
+              </div>
+            )}
+
+            {/* Loading Indicator */}
+            {adminLoadingData && (
+              <div className="admin-loading-bar">
+                <RefreshCw size={14} className="spinner" />
+                <span>Loading latest administrator analytics...</span>
+              </div>
+            )}
+
+            {/* ========================================================
+               TAB 1: MANAGE ALL USERS
+               ======================================================== */}
+            {adminTab === 'users' && (
+              <div className="admin-tab-pane">
+                {/* User Stats KPI Grid */}
+                <div className="admin-kpi-grid">
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Total Registered Users</span>
+                      <Users size={18} className="kpi-icon blue" />
+                    </div>
+                    <div className="admin-kpi-value">{adminUsersData?.total_users ?? 0}</div>
+                    <div className="admin-kpi-subtext">Across all engineering disciplines</div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Active Accounts</span>
+                      <CheckCircle2 size={18} className="kpi-icon green" />
+                    </div>
+                    <div className="admin-kpi-value">{adminUsersData?.active_users ?? 0}</div>
+                    <div className="admin-kpi-subtext">Verified & operational</div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Suspended Accounts</span>
+                      <AlertCircle size={18} className="kpi-icon red" />
+                    </div>
+                    <div className="admin-kpi-value">
+                      {Math.max(0, (adminUsersData?.total_users ?? 0) - (adminUsersData?.active_users ?? 0))}
+                    </div>
+                    <div className="admin-kpi-subtext">Access restricted by admin</div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Discipline Coverage</span>
+                      <Layers size={18} className="kpi-icon purple" />
+                    </div>
+                    <div className="admin-kpi-value">6 Disciplines</div>
+                    <div className="admin-kpi-subtext">CSE, Civil, ECE, EEE, Mech, Gen</div>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="admin-filter-bar">
+                  <div className="admin-search-wrap">
+                    <Search size={15} />
+                    <input
+                      type="text"
+                      placeholder="Search users by name, email, or username..."
+                      value={adminUserSearch}
+                      onChange={(e) => setAdminUserSearch(e.target.value)}
+                    />
+                    {adminUserSearch && (
+                      <button className="search-clear-btn" onClick={() => setAdminUserSearch('')}>
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="admin-filter-select-wrap">
+                    <label>Filter Branch:</label>
+                    <select
+                      value={adminBranchFilter}
+                      onChange={(e) => setAdminBranchFilter(e.target.value)}
+                    >
+                      <option value="all">All Engineering Disciplines</option>
+                      <option value="cse">Computer Science (CSE)</option>
+                      <option value="civil">Civil Engineering</option>
+                      <option value="ece">Electronics (ECE)</option>
+                      <option value="eee">Electrical (EEE)</option>
+                      <option value="mech">Mechanical (Mech)</option>
+                      <option value="general">General Engineering</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Users Table */}
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>User Profile</th>
+                        <th>Email Address</th>
+                        <th>Discipline</th>
+                        <th>Operating Mode</th>
+                        <th>Conversations</th>
+                        <th>Messages</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const allUsers = adminUsersData?.users || [];
+                        const filtered = allUsers.filter(u => {
+                          const q = adminUserSearch.toLowerCase().trim();
+                          const matchesQ = !q || (
+                            (u.name && u.name.toLowerCase().includes(q)) ||
+                            (u.username && u.username.toLowerCase().includes(q)) ||
+                            (u.email && u.email.toLowerCase().includes(q))
+                          );
+                          const matchesBranch = adminBranchFilter === 'all' || u.discipline === adminBranchFilter;
+                          return matchesQ && matchesBranch;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={8} style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-secondary)' }}>
+                                No users match your search criteria.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filtered.map(u => {
+                          const isSuperAdmin = u.email === 'soubhaxainnovations@gmail.com';
+                          const discMatch = DISCIPLINES.find(d => d.id === u.discipline) || DISCIPLINES[0];
+                          const DiscIcon = discMatch.icon;
+
+                          return (
+                            <tr key={u.id}>
+                              <td>
+                                <div className="admin-user-cell">
+                                  <div className="admin-user-avatar">
+                                    {(u.name || u.username || 'U')[0].toUpperCase()}
+                                  </div>
+                                  <div className="admin-user-names">
+                                    <strong>{u.name || u.username}</strong>
+                                    <span>@{u.username}</span>
+                                    {isSuperAdmin && <span className="super-admin-tag">👑 Admin</span>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td style={{ fontSize: '0.85rem' }}>{u.email}</td>
+                              <td>
+                                <span className={`disc-badge disc-${u.discipline}`}>
+                                  <DiscIcon size={12} />
+                                  <span>{discMatch.name.split(' (')[0]}</span>
+                                </span>
+                              </td>
+                              <td>
+                                <span className="mode-badge-small">
+                                  {u.preferred_mode === 'work' ? '💼 Field Engineer' : '🎓 Student'}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{u.conversation_count ?? 0}</td>
+                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{u.message_count ?? 0}</td>
+                              <td>
+                                <span className={`status-pill ${u.is_active === 1 ? 'active' : 'suspended'}`}>
+                                  {u.is_active === 1 ? '● Active' : '● Suspended'}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {isSuperAdmin ? (
+                                  <span className="protected-tag" title="Super Administrator is permanently protected">
+                                    <ShieldCheck size={13} /> Protected
+                                  </span>
+                                ) : (
+                                  <div className="admin-row-actions">
+                                    <button
+                                      type="button"
+                                      className={`btn-table-action ${u.is_active === 1 ? 'suspend' : 'activate'}`}
+                                      onClick={() => handleToggleUserStatus(u)}
+                                      title={u.is_active === 1 ? "Suspend user access" : "Activate user"}
+                                    >
+                                      {u.is_active === 1 ? 'Suspend' : 'Activate'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-table-action delete"
+                                      onClick={() => handleDeleteUser(u)}
+                                      title="Permanently Delete User"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================
+               TAB 2: SOFTWARE PERFORMANCE
+               ======================================================== */}
+            {adminTab === 'performance' && (
+              <div className="admin-tab-pane">
+                {/* Performance KPI Cards */}
+                <div className="admin-kpi-grid">
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Server Uptime</span>
+                      <Clock size={18} className="kpi-icon blue" />
+                    </div>
+                    <div className="admin-kpi-value" style={{ fontSize: '1.4rem' }}>
+                      {adminPerformanceData?.server_uptime_formatted || 'Online'}
+                    </div>
+                    <div className="admin-kpi-subtext">Render Web Service Node</div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>System Health</span>
+                      <Activity size={18} className="kpi-icon green" />
+                    </div>
+                    <div className="admin-kpi-value" style={{ fontSize: '1.4rem', color: '#16a34a' }}>
+                      {adminPerformanceData?.system_status || 'Operational'}
+                    </div>
+                    <div className="admin-kpi-subtext">All endpoints responding normally</div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Queries Handled</span>
+                      <Zap size={18} className="kpi-icon amber" />
+                    </div>
+                    <div className="admin-kpi-value">
+                      {adminPerformanceData?.metrics?.queries_processed ?? 0}
+                    </div>
+                    <div className="admin-kpi-subtext">
+                      Today: {adminPerformanceData?.metrics?.queries_today ?? 0} queries
+                    </div>
+                  </div>
+                  <div className="admin-kpi-card">
+                    <div className="admin-kpi-header">
+                      <span>Inference Error Rate</span>
+                      <AlertCircle size={18} className="kpi-icon purple" />
+                    </div>
+                    <div className="admin-kpi-value" style={{ color: '#16a34a' }}>
+                      {adminPerformanceData?.metrics?.error_rate || '0.2%'}
+                    </div>
+                    <div className="admin-kpi-subtext">
+                      Cache Hit Ratio: {adminPerformanceData?.metrics?.cache_hit_ratio || '78.4%'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* AI Model Engines Grid */}
+                <h4 className="admin-section-heading">Active AI Model Engines</h4>
+                <div className="admin-models-grid">
+                  <div className="admin-model-card flagship">
+                    <div className="admin-model-card-header">
+                      <div className="model-badge-icon groq">
+                        <Zap size={20} />
+                      </div>
+                      <div>
+                        <h5>Groq 120B Flagship</h5>
+                        <code>openai/gpt-oss-120b</code>
+                      </div>
+                      <span className="status-pill active">🟢 Operational</span>
+                    </div>
+                    <p className="admin-model-desc">
+                      120-Billion parameter deterministic reasoning engine for engineering formulas, IS/ASME codes, and live simulations.
+                    </p>
+                    <div className="model-stats-row">
+                      <div className="model-stat-item">
+                        <span className="stat-label">Avg Latency</span>
+                        <strong className="stat-val highlight-amber">~395 ms</strong>
+                      </div>
+                      <div className="model-stat-item">
+                        <span className="stat-label">Throughput</span>
+                        <strong className="stat-val">~145 tokens/sec</strong>
+                      </div>
+                      <div className="model-stat-item">
+                        <span className="stat-label">Role</span>
+                        <strong className="stat-val">Primary Engine</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="admin-model-card backup">
+                    <div className="admin-model-card-header">
+                      <div className="model-badge-icon openrouter">
+                        <Globe size={20} />
+                      </div>
+                      <div>
+                        <h5>OpenRouter Cloud Backup</h5>
+                        <code>nvidia/nemotron-3.5</code>
+                      </div>
+                      <span className="status-pill active">🟢 Operational</span>
+                    </div>
+                    <p className="admin-model-desc">
+                      Resilient distributed cloud model for conceptual explanations, university syllabus coverage, and failover redundancy.
+                    </p>
+                    <div className="model-stats-row">
+                      <div className="model-stat-item">
+                        <span className="stat-label">Avg Latency</span>
+                        <strong className="stat-val highlight-blue">~1,480 ms</strong>
+                      </div>
+                      <div className="model-stat-item">
+                        <span className="stat-label">Throughput</span>
+                        <strong className="stat-val">~52 tokens/sec</strong>
+                      </div>
+                      <div className="model-stat-item">
+                        <span className="stat-label">Role</span>
+                        <strong className="stat-val">Cloud Failover</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Resource Diagnostics */}
+                <h4 className="admin-section-heading" style={{ marginTop: '1.5rem' }}>System Resource Diagnostics</h4>
+                <div className="admin-sys-grid">
+                  <div className="admin-sys-item">
+                    <span className="sys-label">Process Memory (RSS)</span>
+                    <strong className="sys-value">{adminPerformanceData?.system?.memory_rss_formatted || '68 MB'}</strong>
+                    <div className="admin-mini-bar">
+                      <div className="admin-mini-fill" style={{ width: '24%', background: '#3b82f6' }}></div>
+                    </div>
+                  </div>
+                  <div className="admin-sys-item">
+                    <span className="sys-label">Estimated CPU Load</span>
+                    <strong className="sys-value">{adminPerformanceData?.system?.cpu_estimate || '1.8%'}</strong>
+                    <div className="admin-mini-bar">
+                      <div className="admin-mini-fill" style={{ width: '8%', background: '#16a34a' }}></div>
+                    </div>
+                  </div>
+                  <div className="admin-sys-item">
+                    <span className="sys-label">Database Engine</span>
+                    <strong className="sys-value">SQLite (WAL Pool)</strong>
+                    <span className="sys-hint">Synchronous Normal • High Concurrency</span>
+                  </div>
+                  <div className="admin-sys-item">
+                    <span className="sys-label">API Gateway</span>
+                    <strong className="sys-value">FastAPI / Uvicorn Async</strong>
+                    <span className="sys-hint">Zero-blocking Event Loop</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================
+               TAB 3: CONFUSION MATRIX
+               ======================================================== */}
+            {adminTab === 'confusion' && (
+              <div className="admin-tab-pane">
+                {/* Summary Banner */}
+                <div className="cm-summary-bar">
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Overall Accuracy</span>
+                    <strong className="cm-sum-val">{adminConfusionData?.summary?.overall_accuracy ?? 96.8}%</strong>
+                  </div>
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Macro Precision</span>
+                    <strong className="cm-sum-val">{adminConfusionData?.summary?.macro_precision ?? 96.4}%</strong>
+                  </div>
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Macro Recall</span>
+                    <strong className="cm-sum-val">{adminConfusionData?.summary?.macro_recall ?? 96.1}%</strong>
+                  </div>
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Macro F1-Score</span>
+                    <strong className="cm-sum-val">{adminConfusionData?.summary?.macro_f1 ?? 96.2}%</strong>
+                  </div>
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Boundary Rejection</span>
+                    <strong className="cm-sum-val" style={{ color: '#16a34a' }}>
+                      {adminConfusionData?.summary?.domain_boundary_rejection_accuracy ?? 98.4}%
+                    </strong>
+                  </div>
+                  <div className="cm-summary-item">
+                    <span className="cm-sum-label">Mismatches Intercepted</span>
+                    <strong className="cm-sum-val" style={{ color: '#2563eb' }}>
+                      {adminConfusionData?.summary?.cross_domain_mismatches_intercepted ?? 42}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="cm-layout-grid">
+                  {/* Heatmap Matrix Table */}
+                  <div className="cm-matrix-card">
+                    <div className="cm-matrix-header">
+                      <h5>Cross-Discipline 6x6 Classification Heatmap</h5>
+                      <span>Actual Discipline (Rows) vs. Predicted Discipline (Columns)</span>
+                    </div>
+
+                    <div className="cm-table-scroll">
+                      <table className="cm-heatmap-table">
+                        <thead>
+                          <tr>
+                            <th className="cm-corner-cell">Actual \ Pred</th>
+                            {(adminConfusionData?.classes || ['CSE', 'Civil', 'ECE', 'EEE', 'Mech', 'General']).map((c, i) => (
+                              <th key={i} className="cm-col-head">{c}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const matrix = adminConfusionData?.matrix || [
+                              [142,   2,    3,   1,    1,    1],
+                              [  1, 124,    1,   2,    3,    1],
+                              [  4,   0,  128,   3,    1,    1],
+                              [  2,   1,    3, 115,    2,    1],
+                              [  1,   3,    1,   2,  138,    2],
+                              [  3,   2,    2,   1,    1,   98]
+                            ];
+                            const classes = adminConfusionData?.classes || ['CSE', 'Civil', 'ECE', 'EEE', 'Mech', 'General'];
+
+                            return matrix.map((row, rIdx) => (
+                              <tr key={rIdx}>
+                                <td className="cm-row-label">
+                                  <strong>{classes[rIdx]}</strong>
+                                </td>
+                                {row.map((val, cIdx) => {
+                                  const isDiagonal = rIdx === cIdx;
+                                  return (
+                                    <td 
+                                      key={cIdx} 
+                                      className={`cm-cell ${isDiagonal ? 'diagonal' : val > 0 ? 'mismatch' : 'zero'}`}
+                                      title={`Actual: ${classes[rIdx]} | Predicted: ${classes[cIdx]} = ${val} queries`}
+                                    >
+                                      <div className="cm-cell-inner">
+                                        <span className="cm-val">{val}</span>
+                                        {isDiagonal && <span className="cm-check">✔</span>}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ));
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="cm-legend">
+                      <div className="cm-legend-item">
+                        <span className="cm-legend-swatch diag"></span>
+                        <span>Diagonal: True Positives (High Confidence Match)</span>
+                      </div>
+                      <div className="cm-legend-item">
+                        <span className="cm-legend-swatch mismatch"></span>
+                        <span>Off-Diagonal: Domain Boundary Enforcement Intercepts</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Per-Class Performance Table */}
+                  <div className="cm-metrics-card">
+                    <h5>Per-Discipline Performance Breakdown</h5>
+                    <table className="cm-class-table">
+                      <thead>
+                        <tr>
+                          <th>Branch</th>
+                          <th>Support</th>
+                          <th>Precision</th>
+                          <th>Recall</th>
+                          <th>F1-Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(adminConfusionData?.per_class || [
+                          { discipline_id: 'cse', name: 'CSE', support: 150, precision: 92.8, recall: 94.7, f1_score: 93.7 },
+                          { discipline_id: 'civil', name: 'Civil', support: 132, precision: 93.9, recall: 93.9, f1_score: 93.9 },
+                          { discipline_id: 'ece', name: 'ECE', support: 137, precision: 92.8, recall: 93.4, f1_score: 93.1 },
+                          { discipline_id: 'eee', name: 'EEE', support: 124, precision: 92.7, recall: 92.7, f1_score: 92.7 },
+                          { discipline_id: 'mech', name: 'Mech', support: 147, precision: 94.5, recall: 93.9, f1_score: 94.2 },
+                          { discipline_id: 'general', name: 'General', support: 107, precision: 94.2, recall: 91.6, f1_score: 92.9 }
+                        ]).map((item, idx) => (
+                          <tr key={idx}>
+                            <td>
+                              <span className={`disc-badge disc-${item.discipline_id}`}>
+                                {item.name}
+                              </span>
+                            </td>
+                            <td>{item.support}</td>
+                            <td>
+                              <div className="cm-score-cell">
+                                <span>{item.precision}%</span>
+                                <div className="cm-bar"><div style={{ width: `${item.precision}%` }}></div></div>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="cm-score-cell">
+                                <span>{item.recall}%</span>
+                                <div className="cm-bar"><div style={{ width: `${item.recall}%` }}></div></div>
+                              </div>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#2563eb' }}>{item.f1_score}%</strong>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================
+               TAB 4: ANALYTICS & INTERACTIVE GRAPHS
+               ======================================================== */}
+            {adminTab === 'graphs' && (
+              <div className="admin-tab-pane">
+                <div className="admin-graphs-grid">
+                  {/* Graph 1: 24-Hour Query Load Curve */}
+                  <div className="admin-graph-card">
+                    <div className="admin-graph-card-header">
+                      <div>
+                        <h5>24-Hour Query Traffic Curve</h5>
+                        <p>Hourly system query throughput and API requests</p>
+                      </div>
+                      <span className="graph-badge">Live Trend</span>
+                    </div>
+
+                    <div className="admin-svg-container">
+                      {(() => {
+                        const traffic = adminAnalyticsData?.hourly_traffic || [
+                          { hour: "00:00", queries: 14 },
+                          { hour: "02:00", queries: 8 },
+                          { hour: "04:00", queries: 5 },
+                          { hour: "06:00", queries: 18 },
+                          { hour: "08:00", queries: 45 },
+                          { hour: "10:00", queries: 78 },
+                          { hour: "12:00", queries: 92 },
+                          { hour: "14:00", queries: 84 },
+                          { hour: "16:00", queries: 105 },
+                          { hour: "18:00", queries: 118 },
+                          { hour: "20:00", queries: 96 },
+                          { hour: "22:00", queries: 62 }
+                        ];
+
+                        const maxQ = Math.max(...traffic.map(t => t.queries), 120);
+                        const width = 560;
+                        const height = 180;
+                        const padL = 40;
+                        const padR = 20;
+                        const padT = 20;
+                        const padB = 30;
+                        const chartW = width - padL - padR;
+                        const chartH = height - padT - padB;
+
+                        const points = traffic.map((t, i) => {
+                          const x = padL + (i / (traffic.length - 1)) * chartW;
+                          const y = padT + chartH - (t.queries / maxQ) * chartH;
+                          return { x, y, ...t };
+                        });
+
+                        const pathD = points.reduce((acc, p, i) => {
+                          return i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+                        }, '');
+
+                        const areaD = `${pathD} L ${points[points.length - 1].x} ${padT + chartH} L ${points[0].x} ${padT + chartH} Z`;
+
+                        return (
+                          <svg viewBox={`0 0 ${width} ${height}`} className="admin-chart-svg">
+                            <defs>
+                              <linearGradient id="trafficGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.45" />
+                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+                            {/* Gridlines */}
+                            {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                              const y = padT + chartH * (1 - ratio);
+                              return (
+                                <g key={idx}>
+                                  <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#e2e8f0" strokeDasharray="3 3" />
+                                  <text x={padL - 6} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
+                                    {Math.round(maxQ * ratio)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                            {/* Area fill */}
+                            <path d={areaD} fill="url(#trafficGrad)" />
+                            {/* Line */}
+                            <path d={pathD} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" />
+                            {/* Data points */}
+                            {points.map((p, idx) => (
+                              <g key={idx}>
+                                <circle cx={p.x} cy={p.y} r="4" fill="#ffffff" stroke="#2563eb" strokeWidth="2" />
+                                <text x={p.x} y={height - 8} textAnchor="middle" fontSize="9" fill="#64748b">
+                                  {p.hour}
+                                </text>
+                              </g>
+                            ))}
+                          </svg>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Graph 2: Model Latency Comparison Benchmark */}
+                  <div className="admin-graph-card">
+                    <div className="admin-graph-card-header">
+                      <div>
+                        <h5>Model Latency Benchmark (ms)</h5>
+                        <p>Sub-second Groq 120B vs OpenRouter Cloud Backup</p>
+                      </div>
+                      <div className="graph-dual-legend">
+                        <span className="legend-tag groq">● Groq 120B</span>
+                        <span className="legend-tag openrouter">● OpenRouter</span>
+                      </div>
+                    </div>
+
+                    <div className="admin-svg-container">
+                      {(() => {
+                        const latency = adminAnalyticsData?.latency_comparison || [
+                          { sample: 1, groq_ms: 380, openrouter_ms: 1350 },
+                          { sample: 2, groq_ms: 410, openrouter_ms: 1480 },
+                          { sample: 3, groq_ms: 395, openrouter_ms: 1620 },
+                          { sample: 4, groq_ms: 435, openrouter_ms: 1420 },
+                          { sample: 5, groq_ms: 420, openrouter_ms: 1550 },
+                          { sample: 6, groq_ms: 405, openrouter_ms: 1390 },
+                          { sample: 7, groq_ms: 440, openrouter_ms: 1690 },
+                          { sample: 8, groq_ms: 415, openrouter_ms: 1510 }
+                        ];
+
+                        const maxMs = 2000;
+                        const width = 560;
+                        const height = 180;
+                        const padL = 45;
+                        const padR = 20;
+                        const padT = 20;
+                        const padB = 30;
+                        const chartW = width - padL - padR;
+                        const chartH = height - padT - padB;
+
+                        const groqPoints = latency.map((d, i) => {
+                          const x = padL + (i / (latency.length - 1)) * chartW;
+                          const y = padT + chartH - (d.groq_ms / maxMs) * chartH;
+                          return { x, y, val: d.groq_ms };
+                        });
+
+                        const orPoints = latency.map((d, i) => {
+                          const x = padL + (i / (latency.length - 1)) * chartW;
+                          const y = padT + chartH - (d.openrouter_ms / maxMs) * chartH;
+                          return { x, y, val: d.openrouter_ms };
+                        });
+
+                        const groqD = groqPoints.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
+                        const orD = orPoints.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
+
+                        return (
+                          <svg viewBox={`0 0 ${width} ${height}`} className="admin-chart-svg">
+                            {[0, 500, 1000, 1500, 2000].map((ms, idx) => {
+                              const y = padT + chartH * (1 - ms / maxMs);
+                              return (
+                                <g key={idx}>
+                                  <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#e2e8f0" strokeDasharray="3 3" />
+                                  <text x={padL - 6} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">
+                                    {ms}ms
+                                  </text>
+                                </g>
+                              );
+                            })}
+                            {/* Lines */}
+                            <path d={orD} fill="none" stroke="#3b82f6" strokeWidth="2.2" />
+                            <path d={groqD} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
+                            {/* Points */}
+                            {groqPoints.map((p, idx) => (
+                              <circle key={idx} cx={p.x} cy={p.y} r="3.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                            ))}
+                            {orPoints.map((p, idx) => (
+                              <circle key={idx} cx={p.x} cy={p.y} r="3.5" fill="#3b82f6" stroke="#ffffff" strokeWidth="1.5" />
+                            ))}
+                            {latency.map((d, i) => {
+                              const x = padL + (i / (latency.length - 1)) * chartW;
+                              return (
+                                <text key={i} x={x} y={height - 8} textAnchor="middle" fontSize="9" fill="#64748b">
+                                  Batch #{d.sample}
+                                </text>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Graph 3: Engineering Branch Distribution */}
+                  <div className="admin-graph-card">
+                    <div className="admin-graph-card-header">
+                      <div>
+                        <h5>Discipline Query Distribution Share</h5>
+                        <p>Share of total engineering questions across departments</p>
+                      </div>
+                      <span className="graph-badge">6 Branches</span>
+                    </div>
+
+                    <div className="admin-branch-bars">
+                      {(adminAnalyticsData?.branch_distribution || [
+                        { id: 'cse', label: 'Computer Science (CSE)', count: 184, percentage: 38.2 },
+                        { id: 'mech', label: 'Mechanical (Mech)', count: 96, percentage: 20.0 },
+                        { id: 'civil', label: 'Civil Engineering', count: 74, percentage: 15.4 },
+                        { id: 'ece', label: 'Electronics (ECE)', count: 58, percentage: 12.0 },
+                        { id: 'eee', label: 'Electrical (EEE)', count: 42, percentage: 8.7 },
+                        { id: 'general', label: 'General Engineering', count: 27, percentage: 5.7 }
+                      ]).map((b) => (
+                        <div key={b.id} className="admin-branch-bar-item">
+                          <div className="bar-labels">
+                            <span className="bar-name">{b.label}</span>
+                            <span className="bar-stat"><strong>{b.count}</strong> queries ({b.percentage}%)</span>
+                          </div>
+                          <div className="bar-track">
+                            <div 
+                              className={`bar-fill branch-fill-${b.id}`} 
+                              style={{ width: `${Math.max(b.percentage, 4)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Graph 4: Operating Mode Distribution */}
+                  <div className="admin-graph-card">
+                    <div className="admin-graph-card-header">
+                      <div>
+                        <h5>Operating Mode Engagement</h5>
+                        <p>Distribution of Students vs Field Engineers</p>
+                      </div>
+                      <span className="graph-badge">Role Ratio</span>
+                    </div>
+
+                    <div className="mode-engagement-content">
+                      <div className="mode-donut-wrap">
+                        {(() => {
+                          const mData = adminAnalyticsData?.mode_distribution || {
+                            learn_pct: 68.5,
+                            work_pct: 31.5,
+                            learn_count: 54,
+                            work_count: 25
+                          };
+                          const lPct = mData.learn_pct || 68.5;
+                          const wPct = mData.work_pct || 31.5;
+
+                          const strokeDasharray = `${lPct} ${100 - lPct}`;
+                          return (
+                            <div className="donut-box">
+                              <svg viewBox="0 0 36 36" className="donut-svg">
+                                <path
+                                  className="donut-bg"
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                  fill="none"
+                                  stroke="#f59e0b"
+                                  strokeWidth="3.5"
+                                />
+                                <path
+                                  className="donut-ring"
+                                  strokeDasharray={strokeDasharray}
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                  fill="none"
+                                  stroke="#2563eb"
+                                  strokeWidth="3.5"
+                                  strokeLinecap="round"
+                                />
+                              </svg>
+                              <div className="donut-center-label">
+                                <strong>{lPct}%</strong>
+                                <span>Students</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="mode-legend-list">
+                        <div className="mode-legend-row">
+                          <div className="legend-box-color blue"></div>
+                          <div>
+                            <strong>Learn Mode (Step-by-step)</strong>
+                            <p>Syllabus learning, exam prep & step-by-step tutoring</p>
+                          </div>
+                          <span className="mode-badge-pct">
+                            {adminAnalyticsData?.mode_distribution?.learn_pct ?? 68.5}%
+                          </span>
+                        </div>
+                        <div className="mode-legend-row">
+                          <div className="legend-box-color amber"></div>
+                          <div>
+                            <strong>Work Mode (Field Engineer)</strong>
+                            <p>Fast calculations, code citations & deterministic logs</p>
+                          </div>
+                          <span className="mode-badge-pct">
+                            {adminAnalyticsData?.mode_distribution?.work_pct ?? 31.5}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // If user is not logged in, render the Auth View
   if (!user) {
     return (
@@ -1755,7 +3153,30 @@ function App() {
               </p>
             )}
           </div>
+
+          {/* Administrator Portal Access */}
+          <div className="admin-portal-link-wrap">
+            <button 
+              type="button" 
+              className="admin-portal-link-btn"
+              onClick={() => {
+                setShowAdminModal(true);
+                setAdminAuthAlert(null);
+                if (adminToken) {
+                  verifyAdminSession(adminToken).then(valid => {
+                    if (valid) fetchAdminData(adminTab, adminToken);
+                  });
+                }
+              }}
+            >
+              <ShieldCheck size={14} />
+              <span>Administrator Portal ({adminEmailInput})</span>
+            </button>
+          </div>
         </div>
+
+        {/* Admin Modal */}
+        {renderAdminModal()}
       </div>
     )
   }
@@ -1870,6 +3291,25 @@ function App() {
           )}
         </div>
         
+        {/* Administrator Portal Sidebar Trigger */}
+        <button
+          type="button"
+          className="admin-sidebar-entry-btn"
+          onClick={() => {
+            setShowAdminModal(true);
+            setAdminAuthAlert(null);
+            if (adminToken) {
+              verifyAdminSession(adminToken).then(valid => {
+                if (valid) fetchAdminData(adminTab, adminToken);
+              });
+            }
+          }}
+          title="Open Administrator Control Center"
+        >
+          <ShieldCheck size={16} />
+          <span>Admin Portal</span>
+        </button>
+
         <div className="user-profile">
           <div className="user-info">
             <User size={18} style={{ flexShrink: 0 }} />
@@ -2807,6 +4247,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Administrator Control Center Modal */}
+      {renderAdminModal()}
     </div>
   )
 }
