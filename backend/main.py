@@ -145,6 +145,7 @@ class ChatMessage(Base):
     file_size = Column(Integer, nullable=True)
     mode = Column(String, default="learn")
     language = Column(String, default="en")
+    model = Column(String, default="auto")
     
     user = relationship("User", back_populates="messages")
     conversation = relationship("Conversation", back_populates="messages")
@@ -281,6 +282,10 @@ def init_db():
                 with engine.begin() as conn:
                     conn.execute(text("ALTER TABLE messages ADD COLUMN language VARCHAR(10) DEFAULT 'en'"))
                 print("[DB MIGRATION] Added 'language' column to messages table.")
+            if "model" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE messages ADD COLUMN model VARCHAR(100) DEFAULT 'auto'"))
+                print("[DB MIGRATION] Added 'model' column to messages table.")
 
         # Migrate any legacy orphaned messages into initial conversations
         with SessionLocal() as db:
@@ -375,6 +380,7 @@ class ChatRequest(BaseModel):
     file_name: Optional[str] = None
     file_size: Optional[int] = None
     file_text: Optional[str] = None
+    model_provider: Optional[str] = "auto"
 
 class ProfileUpdate(BaseModel):
     user_id: int
@@ -676,13 +682,19 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
         "email": user.email
     }
 
-def generate_ai_response(system_instruction: str, history_messages: list, new_user_message: str) -> str:
+def generate_ai_response(
+    system_instruction: str, 
+    history_messages: list, 
+    new_user_message: str,
+    preferred_provider: Optional[str] = "auto",
+    return_model: bool = False
+):
     ai_provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
     ollama_model = os.getenv("OLLAMA_MODEL", "engibot-model").strip()
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
     # 0. Helper function to query Groq API (Ultra-fast, 120B parameter reasoning)
-    def try_groq() -> str:
+    def try_groq():
         groq_key = os.getenv("GROQ_API_KEY", "").strip()
         if not groq_key:
             return None
@@ -725,7 +737,7 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
                     result = res.json()
                     choices = result.get("choices", [])
                     if choices:
-                        return choices[0]["message"]["content"]
+                        return choices[0]["message"]["content"], f"Groq ({model_name})"
                 else:
                     last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:120]}"
                     print(f"[GROQ WARNING] {last_error}. Trying next Groq model...")
@@ -738,7 +750,7 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         return None
 
     # 1. Helper function to query Claude API (Anthropic Messages Endpoint)
-    def try_claude() -> str:
+    def try_claude():
         claude_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         if not claude_key:
             return None
@@ -763,12 +775,12 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         res = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=60)
         if res.status_code == 200:
             result = res.json()
-            return "".join([b.get("text", "") for b in result.get("content", [])])
+            return "".join([b.get("text", "") for b in result.get("content", [])]), f"Claude ({claude_model})"
         else:
             raise Exception(f"Claude API Error ({res.status_code}): {res.text}")
 
     # 2. Helper function to query local Ollama model
-    def try_ollama() -> str:
+    def try_ollama():
         if not ollama_model:
             return None
         ollama_messages = [{"role": "system", "content": system_instruction}]
@@ -788,12 +800,12 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         res = requests.post(f"{ollama_base_url}/api/chat", json=payload, timeout=90)
         if res.status_code == 200:
             result = res.json()
-            return result.get("message", {}).get("content", "")
+            return result.get("message", {}).get("content", ""), f"Local Ollama ({ollama_model})"
         else:
             raise Exception(f"Ollama Error ({res.status_code}): {res.text}")
 
     # 3. Helper function to query OpenRouter AI
-    def try_openrouter() -> str:
+    def try_openrouter():
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not openrouter_key:
             return None
@@ -837,7 +849,7 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
                     result = res.json()
                     choices = result.get("choices", [])
                     if choices:
-                        return choices[0]["message"]["content"]
+                        return choices[0]["message"]["content"], f"OpenRouter ({model_name})"
                 else:
                     last_error = f"{model_name} HTTP {res.status_code}: {res.text[:120]}"
                     print(f"[OPENROUTER WARNING] {last_error}. Trying next free model...")
@@ -850,7 +862,7 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         return None
 
     # 4. Helper function to query AWS Bedrock
-    def try_bedrock() -> str:
+    def try_bedrock():
         aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
         aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
         if not (aws_access_key and aws_secret_key):
@@ -873,55 +885,95 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
             messages=formatted_history,
             system=[{"text": system_instruction}]
         )
-        return response['output']['message']['content'][0]['text']
+        return response['output']['message']['content'][0]['text'], "AWS Bedrock"
 
-    # AI Execution Priority:
-    # 0. Groq API (Primary high-speed 120B reasoning if configured)
+    # Route according to preferred_provider selection (from UI model selector)
+    pref = (preferred_provider or ai_provider or "auto").strip().lower()
+
+    # Case A: Explicitly selected Groq 120B
+    if pref in ("groq", "groq-120b"):
+        try:
+            groq_res = try_groq()
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Explicit Groq request warning ({e}). Falling back to OpenRouter...")
+        try:
+            or_res = try_openrouter()
+            if or_res:
+                return or_res if return_model else or_res[0]
+        except Exception:
+            pass
+
+    # Case B: Explicitly selected OpenRouter Cloud
+    elif pref in ("openrouter", "nemotron", "cloud"):
+        try:
+            or_res = try_openrouter()
+            if or_res:
+                return or_res if return_model else or_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Explicit OpenRouter request warning ({e}). Falling back to Groq...")
+        try:
+            groq_res = try_groq()
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
+        except Exception:
+            pass
+
+    # Case C: Explicitly selected Local Ollama
+    elif pref in ("ollama", "local"):
+        try:
+            ollama_res = try_ollama()
+            if ollama_res:
+                return ollama_res if return_model else ollama_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Explicit Ollama request failed ({e}). Falling back to Groq...")
+        try:
+            groq_res = try_groq()
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
+        except Exception:
+            pass
+
+    # Case D: Auto Smart Cascade (Default: Groq -> Claude -> Ollama -> OpenRouter -> Bedrock)
     if os.getenv("GROQ_API_KEY", "").strip():
         try:
-            groq_ans = try_groq()
-            if groq_ans:
-                return groq_ans
+            groq_res = try_groq()
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Groq API unavailable ({e}). Falling back to next provider...")
+            print(f"[AI ROUTER] Groq API warning ({e}). Falling back to next provider...")
 
-    # 1. Claude API (if configured)
     if ai_provider in ("claude", "anthropic") or os.getenv("ANTHROPIC_API_KEY", "").strip():
         try:
-            claude_ans = try_claude()
-            if claude_ans:
-                return claude_ans
+            claude_res = try_claude()
+            if claude_res:
+                return claude_res if return_model else claude_res[0]
         except Exception as e:
             print(f"[AI ROUTER] Claude API unavailable ({e}). Falling back...")
 
-    # 2. Ollama local model
-    if ai_provider in ("ollama", "local", "auto"):
-        try:
-            ollama_ans = try_ollama()
-            if ollama_ans:
-                return ollama_ans
-        except Exception as e:
-            print(f"[AI ROUTER] Ollama local model not available ({e}). Falling back...")
-            if ai_provider == "ollama" and not os.getenv("OPENROUTER_API_KEY", "").strip():
-                raise Exception(f"Ollama local model '{ollama_model}' could not be reached at {ollama_base_url}: {e}.")
-
-    # 3. Fallback / Cloud: OpenRouter
     try:
-        openrouter_ans = try_openrouter()
-        if openrouter_ans:
-            return openrouter_ans
+        ollama_res = try_ollama()
+        if ollama_res:
+            return ollama_res if return_model else ollama_res[0]
+    except Exception as e:
+        print(f"[AI ROUTER] Ollama local model not available ({e}). Falling back...")
+
+    try:
+        or_res = try_openrouter()
+        if or_res:
+            return or_res if return_model else or_res[0]
     except Exception as e:
         print(f"[AI ROUTER] OpenRouter error: {e}")
 
-    # 4. Fallback: AWS Bedrock
     try:
-        bedrock_ans = try_bedrock()
-        if bedrock_ans:
-            return bedrock_ans
+        bedrock_res = try_bedrock()
+        if bedrock_res:
+            return bedrock_res if return_model else bedrock_res[0]
     except Exception as e:
         print(f"[AI ROUTER] Bedrock error: {e}")
 
-    raise Exception("No AI provider responded successfully. Please check your Ollama or OpenRouter configuration in backend/.env")
+    raise Exception("No AI provider responded successfully. Please check your Groq, Ollama, or OpenRouter configuration in backend/.env")
 
 @app.post("/api/chat")
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
@@ -1007,10 +1059,12 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 att_info += "\n(The user has shared an engineering video file for discussion.)"
             augmented_prompt = f"{augmented_prompt.strip()}\n{att_info}".strip()
 
-        ai_text = generate_ai_response(
+        ai_text, model_used = generate_ai_response(
             system_instruction=effective_system_instruction,
             history_messages=history_msgs,
-            new_user_message=augmented_prompt
+            new_user_message=augmented_prompt,
+            preferred_provider=request.model_provider,
+            return_model=True
         )
 
         ai_msg = ChatMessage(
@@ -1020,7 +1074,8 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             content=ai_text,
             discipline=request.discipline,
             mode=active_mode,
-            language=active_lang
+            language=active_lang,
+            model=model_used
         )
         db.add(ai_msg)
         conv.updated_at = datetime.utcnow()
@@ -1028,6 +1083,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
         return {
             "response": ai_text,
+            "model_used": model_used,
             "conversation_id": conv.id,
             "title": conv.title,
             "discipline": conv.discipline,
@@ -1107,6 +1163,7 @@ def get_conversation_messages(conversation_id: int, db: Session = Depends(get_db
                 "content": m.content,
                 "timestamp": m.timestamp,
                 "discipline": m.discipline,
+                "model": getattr(m, "model", None),
                 "attachment_url": getattr(m, "attachment_url", None),
                 "attachment_type": getattr(m, "attachment_type", None),
                 "file_name": getattr(m, "file_name", None),
@@ -1178,6 +1235,10 @@ def get_model_status():
             "is_target_installed": any(ollama_model in m for m in installed_models),
             "available_models": installed_models,
             "base_url": ollama_base_url
+        },
+        "groq": {
+            "configured": bool(os.getenv("GROQ_API_KEY")),
+            "model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         },
         "openrouter": {
             "configured": bool(os.getenv("OPENROUTER_API_KEY")),

@@ -3,7 +3,7 @@ import {
   Bot, User, Send, Key,
   Cpu, HardHat, Radio, Zap, Wrench, MessageSquare, LogOut,
   Mail, ShieldCheck, ArrowRight, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles,
-  Plus, Trash2, Check, X, Layers, MessageCircle,
+  Plus, Trash2, Check, X, Layers, MessageCircle, ChevronDown, Globe,
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award
 } from 'lucide-react'
@@ -15,6 +15,42 @@ const formatFileSize = (bytes) => {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
+
+const MODEL_OPTIONS = [
+  {
+    id: 'groq',
+    name: 'Groq 120B',
+    shortName: 'Groq 120B',
+    subtitle: 'Flagship • openai/gpt-oss-120b',
+    icon: Zap,
+    color: '#f59e0b',
+    badge: '⚡ 120B Ultra-Fast',
+    badgeClass: 'badge-groq',
+    description: '120-Billion parameter engine. Sub-second speed, best for calculations, formulas & code.'
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter Cloud',
+    shortName: 'OpenRouter',
+    subtitle: 'Free Cloud • Nemotron 3.5',
+    icon: Globe,
+    color: '#3b82f6',
+    badge: '🌐 Free Cloud',
+    badgeClass: 'badge-openrouter',
+    description: 'Dependable cloud backup. Great for conceptual explanations, syllabus Q&A & theory.'
+  },
+  {
+    id: 'auto',
+    name: 'Auto (Smart Route)',
+    shortName: 'Auto Route',
+    subtitle: 'Smart cascade with failover',
+    icon: Sparkles,
+    color: '#a855f7',
+    badge: '✨ Recommended',
+    badgeClass: 'badge-auto',
+    description: 'Queries Groq 120B first, auto-fails over to OpenRouter if rate-limited.'
+  }
+]
 
 const DISCIPLINES = [
   { id: 'general', name: 'General Engineering', icon: MessageSquare, prompt: 'You are an expert engineering assistant.', bgUrl: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2070&auto=format&fit=crop' },
@@ -58,6 +94,38 @@ function App() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+
+  // Claude-Style Interactive Model Selection State
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try {
+      return localStorage.getItem('engibot_selected_model') || 'auto'
+    } catch {
+      return 'auto'
+    }
+  })
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+  const modelDropdownRef = useRef(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setIsModelDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleSelectModel = (modelId) => {
+    setSelectedModel(modelId)
+    try {
+      localStorage.setItem('engibot_selected_model', modelId)
+    } catch {}
+    setIsModelDropdownOpen(false)
+  }
+
+  const currentModelConfig = MODEL_OPTIONS.find(m => m.id === selectedModel) || MODEL_OPTIONS[2]
+  const CurrentModelIcon = currentModelConfig.icon
   
   // ChatGPT-style Conversation History state
   const [conversations, setConversations] = useState([])
@@ -938,7 +1006,8 @@ function App() {
           attachment_type: fileType,
           file_name: fileName,
           file_size: fileSize,
-          file_text: fileText
+          file_text: fileText,
+          model_provider: selectedModel
         })
       });
       
@@ -948,7 +1017,7 @@ function App() {
       }
       
       const data = await res.json();
-      const botMessage = { role: 'ai', content: data.response }
+      const botMessage = { role: 'ai', content: data.response, model_used: data.model_used }
       setMessages(prev => {
         const updated = [...prev, botMessage]
         if (autoSpeak && data.response) {
@@ -1540,24 +1609,61 @@ function App() {
               <span>New</span>
             </button>
 
-            {/* Model Badge */}
-            {modelStatus && (
-              <div 
-                className="model-badge" 
-                title={
-                  modelStatus.ollama?.online 
-                    ? `Active local model: ${modelStatus.ollama.target_model}` 
-                    : `Cloud fallback active (${modelStatus.openrouter?.model || 'OpenRouter'}). Ollama offline.`
-                }
+            {/* Claude-Style Interactive Model Selector */}
+            <div className="model-selector-container" ref={modelDropdownRef}>
+              <button 
+                type="button" 
+                className={`model-selector-btn ${isModelDropdownOpen ? 'open' : ''}`}
+                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                title="Select active AI model"
               >
-                <span className={`status-dot ${modelStatus.ollama?.online ? 'online' : 'cloud'}`}></span>
-                <span>
-                  {modelStatus.ollama?.online 
-                    ? `Local: ${modelStatus.ollama.target_model}` 
-                    : 'Cloud AI'}
+                <span className="model-btn-icon" style={{ color: currentModelConfig.color }}>
+                  <CurrentModelIcon size={14} />
                 </span>
-              </div>
-            )}
+                <span className="model-btn-name">{currentModelConfig.shortName}</span>
+                <ChevronDown size={13} className={`chevron-icon ${isModelDropdownOpen ? 'rotate' : ''}`} />
+              </button>
+
+              {isModelDropdownOpen && (
+                <div className="model-dropdown-menu glass-panel">
+                  <div className="model-dropdown-header">
+                    <span>Select AI Model</span>
+                    <span className="model-count-tag">2 Models Active</span>
+                  </div>
+
+                  <div className="model-options-list">
+                    {MODEL_OPTIONS.map((opt) => {
+                      const Icon = opt.icon;
+                      const isSelected = selectedModel === opt.id;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`model-option-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleSelectModel(opt.id)}
+                        >
+                          <div className="model-option-top">
+                            <div className="model-option-title-group">
+                              <span className="model-icon-bubble" style={{ background: `${opt.color}1a`, color: opt.color }}>
+                                <Icon size={15} />
+                              </span>
+                              <div>
+                                <div className="model-option-name">{opt.name}</div>
+                                <div className="model-option-sub">{opt.subtitle}</div>
+                              </div>
+                            </div>
+                            <div className="model-option-badge-wrap">
+                              <span className={`model-pill-badge ${opt.badgeClass}`}>{opt.badge}</span>
+                              {isSelected && <Check size={16} className="model-check-icon" />}
+                            </div>
+                          </div>
+                          <p className="model-option-desc">{opt.description}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -1674,6 +1780,13 @@ function App() {
                         <ShieldCheck size={13} />
                         <span>Escalate Doubt</span>
                       </button>
+
+                      {(msg.model_used || msg.model) && (
+                        <span className="msg-model-tag" title={`Generated via ${msg.model_used || msg.model}`}>
+                          <Zap size={11} style={{ color: '#f59e0b' }} />
+                          <span>{msg.model_used || msg.model}</span>
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1823,6 +1936,18 @@ function App() {
               </div>
 
               <div className="toolbar-right">
+                {/* Claude-Style Chatbox Model Switcher Pill */}
+                <button
+                  type="button"
+                  className="chatbox-model-pill"
+                  onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                  title={`Active AI Model: ${currentModelConfig.name} (${currentModelConfig.subtitle}). Click to change model.`}
+                >
+                  <CurrentModelIcon size={13} style={{ color: currentModelConfig.color }} />
+                  <span>{currentModelConfig.shortName}</span>
+                  <ChevronDown size={11} className={isModelDropdownOpen ? 'rotate' : ''} />
+                </button>
+
                 <button
                   type="button"
                   className={`toolbar-action-btn voice-btn ${isListening ? 'listening' : ''}`}
