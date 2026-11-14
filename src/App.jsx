@@ -3,10 +3,10 @@ import {
   Bot, User, Send, Key,
   Cpu, HardHat, Radio, Zap, Wrench, MessageSquare, LogOut,
   Mail, ShieldCheck, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles, UserPlus,
-  Plus, Trash2, Check, X, Layers, MessageCircle, ChevronDown, Globe,
+  Plus, Trash2, Check, X, Layers, ChevronDown, Globe,
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award,
-  Shield, Activity, BarChart3, Users, Search, Power, Clock, TrendingUp, KeyRound, Lock,
+  Shield, BarChart3, Users, Search, Power, Clock, TrendingUp, Lock,
   SlidersHorizontal, CreditCard, Server
 } from 'lucide-react'
 import './App.css'
@@ -180,7 +180,6 @@ function App() {
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [authAlert, setAuthAlert] = useState(null)
-  const [modelStatus, setModelStatus] = useState(null)
   const [isServerOffline, setIsServerOffline] = useState(false)
 
   // Registration 2-Step OTP Verification State
@@ -899,7 +898,7 @@ function App() {
       let payload = { discipline: activeDiscipline.id, topic: examTopic || activeDiscipline.name };
       if (examTab === 'pyq') {
         endpoint = '/api/exam/pyq';
-        payload = { discipline: activeDiscipline.id, university, semester: parseInt(semester, 10), subject: examTopic || activeDiscipline.name };
+        payload = { discipline: activeDiscipline.id, university: 'Technical University', semester: 5, subject: examTopic || activeDiscipline.name };
       } else if (examTab === 'quiz') {
         endpoint = '/api/exam/quiz';
       } else if (examTab === 'flashcards') {
@@ -1098,7 +1097,7 @@ function App() {
     const clean = (text || '')
       .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
       .replace(/`([^`]+)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/[*#_~>]/g, ' ')
       .replace(/https?:\/\/\S+/g, '')
       .replace(/\s+/g, ' ')

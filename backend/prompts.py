@@ -162,11 +162,11 @@ This question belongs to the **{target_name}** discipline.
 #### Why this boundary is enforced:
 EngiBot enforces strict engineering domain specialization to ensure all calculations, regulatory code standards (such as **IS 456**, **IS 800**, **IEEE**, or **ASME**), and technical methodologies are applied with 100% disciplinary accuracy.
 
-#### How to get the solution:
-1. Click **Switch Branch** in the header or in your user profile and select **{target_name}**.
-2. Once switched, ask your question to the **{target_name} Expert** to receive the complete worked solution, governing standards, and formula verification.
+#### Disciplinary Scope:
+Your account is registered and permanently specialized in **{curr_name}**. All calculations, technical engines, and responses in this workspace are dedicated strictly to {curr_name}.
 
-*Feel free to ask any question related to **{curr_name}** here ({curr_examples})!*"""
+Please ask questions related to **{curr_name}** ({curr_examples})!
+*(If you need assistance in **{target_name}**, please register a dedicated {target_name} account.)*"""
 
 MASTER_PROTOCOL = """You are EngiBot, the premier AI engineering assistant designed for university engineering students and practicing field engineers.
 
