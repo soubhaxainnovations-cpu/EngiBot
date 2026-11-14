@@ -2405,6 +2405,118 @@
   color: #1d4ed8;
 }
 
+/* Registration Mode Pills */
+.auth-mode-pills-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  .auth-mode-pills-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auth-mode-pill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  text-align: left;
+}
+
+.auth-mode-pill-btn:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+.auth-mode-pill-btn.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #2563eb;
+}
+
+.mode-pill-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.mode-pill-icon {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.mode-pill-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.auth-mode-pill-btn.selected .mode-pill-name {
+  color: #1d4ed8;
+}
+
+.mode-pill-desc {
+  font-size: 0.70rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.auth-mode-pill-btn.selected .mode-pill-desc {
+  color: #1e40af;
+}
+
+/* Permanent Lock Notice */
+.auth-lock-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 11px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.71rem;
+  color: #475569;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.auth-lock-notice svg {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+/* Locked Header & Sidebar Badges */
+.header-branch-pill.locked,
+.user-profile-branch-badge.locked,
+.mode-toggle-btn.locked {
+  cursor: default !important;
+  user-select: none;
+}
+
+.branch-pill-lock,
+.mode-pill-lock {
+  color: #2563eb;
+  opacity: 0.85;
+  margin-left: 4px;
+}
+
 /* Sidebar History Clean View */
 .history-header-row {
   display: flex;

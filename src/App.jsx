@@ -145,9 +145,9 @@ function App() {
   const [editingConvId, setEditingConvId] = useState(null)
   const [editingTitle, setEditingTitle] = useState('')
 
-  // Branch Selection & Specialization State
+  // Branch & Mode Registration State
   const [registerBranch, setRegisterBranch] = useState('cse')
-  const [showBranchModal, setShowBranchModal] = useState(false)
+  const [registerMode, setRegisterMode] = useState('learn') // 'learn' | 'work'
 
   // File Upload & Attachment State
   const fileInputRef = useRef(null)
@@ -190,18 +190,16 @@ function App() {
     phone: '',
     username: '',
     password: '',
-    discipline: 'general'
+    discipline: 'cse',
+    preferred_mode: 'learn'
   })
   const [regOtpInput, setRegOtpInput] = useState('')
   const [isSendingRegOtp, setIsSendingRegOtp] = useState(false)
   const [isVerifyingRegOtp, setIsVerifyingRegOtp] = useState(false)
   const [regCountdown, setRegCountdown] = useState(0)
 
-  // Persona & Curriculum Onboarding State
-  const [userRole, setUserRole] = useState('student') // 'student' | 'professional'
-  const [university, setUniversity] = useState('BPUT')
-  const [semester, setSemester] = useState(5)
-  const [experienceYears, setExperienceYears] = useState(0)
+  // User Profile & Permanent Operating Mode State (English is Compulsory)
+  const language = 'en'
   const [activeMode, setActiveMode] = useState(() => {
     try {
       return localStorage.getItem('engibot_mode') || 'learn'
@@ -209,14 +207,6 @@ function App() {
       return 'learn'
     }
   })
-  const [language, setLanguage] = useState(() => {
-    try {
-      return localStorage.getItem('engibot_lang') || 'en'
-    } catch {
-      return 'en'
-    }
-  })
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false)
 
   // Engineering Calculator State
   const [showCalcModal, setShowCalcModal] = useState(false)
@@ -335,74 +325,17 @@ function App() {
       const res = await fetch(`${API_BASE}/api/user/profile/${userId}`);
       if (res.ok) {
         const data = await res.json();
-        setUserRole(data.role || 'student');
-        setUniversity(data.university || 'BPUT');
-        setSemester(data.semester || 5);
-        setExperienceYears(data.experience_years || 0);
-        if (data.preferred_mode) setActiveMode(data.preferred_mode);
-        if (data.preferred_language) setLanguage(data.preferred_language);
+        if (data.preferred_mode) {
+          setActiveMode(data.preferred_mode);
+          try { localStorage.setItem('engibot_mode', data.preferred_mode); } catch {}
+        }
         if (data.discipline) {
           const matchedBranch = DISCIPLINES.find(d => d.id === data.discipline);
           if (matchedBranch) setActiveDiscipline(matchedBranch);
         }
-        
-        // Show onboarding if not yet marked as onboarded
-        if (!localStorage.getItem(`engibot_onboarded_${userId}`)) {
-          setShowOnboardingModal(true);
-        }
       }
     } catch (e) {
       console.error("Failed to load user profile:", e);
-    }
-  };
-
-  const handleSelectBranch = async (discipline) => {
-    setActiveDiscipline(discipline);
-    setShowBranchModal(false);
-    if (user && user.id) {
-      try {
-        const updated = { ...user, discipline: discipline.id };
-        setUser(updated);
-        localStorage.setItem('chat_user', JSON.stringify(updated));
-        await fetch(`${API_BASE}/api/user/profile`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: user.id,
-            discipline: discipline.id
-          })
-        });
-      } catch (err) {
-        console.warn('Could not save branch preference to database:', err);
-      }
-    }
-    handleNewChat(discipline);
-  };
-
-  const handleSaveOnboarding = async (e) => {
-    e?.preventDefault();
-    if (!user) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/user/profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          role: userRole,
-          university: university,
-          semester: parseInt(semester, 10),
-          discipline: activeDiscipline.id,
-          experience_years: parseInt(experienceYears, 10),
-          preferred_mode: activeMode,
-          preferred_language: language
-        })
-      });
-      if (res.ok) {
-        localStorage.setItem(`engibot_onboarded_${user.id}`, 'true');
-        setShowOnboardingModal(false);
-      }
-    } catch (e) {
-      alert("Failed to save profile: " + e.message);
     }
   };
 
@@ -958,7 +891,8 @@ function App() {
     const phone = (regFormData.phone || '').trim()
     const username = (regFormData.username || '').trim()
     const password = (regFormData.password || '').trim()
-    const discipline = registerBranch || regFormData.discipline || 'general'
+    const discipline = registerBranch || regFormData.discipline || 'cse'
+    const preferred_mode = registerMode || regFormData.preferred_mode || 'learn'
 
     if (!fullName) {
       setAuthAlert({ type: 'error', text: 'Please enter your Full Name.' })
@@ -1008,7 +942,8 @@ function App() {
       email,
       username,
       password,
-      discipline
+      discipline,
+      preferred_mode
     }
 
     try {
@@ -1057,6 +992,9 @@ function App() {
     setIsVerifyingRegOtp(true)
     setAuthAlert(null)
 
+    const discipline = registerBranch || regFormData.discipline || 'cse'
+    const preferred_mode = registerMode || regFormData.preferred_mode || 'learn'
+
     const payload = {
       name: (regFormData.fullName || '').trim(),
       dob: regFormData.dob,
@@ -1064,7 +1002,8 @@ function App() {
       email: (regFormData.email || '').trim().toLowerCase(),
       username: (regFormData.username || '').trim(),
       password: (regFormData.password || '').trim(),
-      discipline: registerBranch || regFormData.discipline || 'general',
+      discipline,
+      preferred_mode,
       otp_code: codeClean
     }
 
@@ -1086,6 +1025,10 @@ function App() {
       if (data.discipline) {
         const found = DISCIPLINES.find(d => d.id === data.discipline)
         if (found) setActiveDiscipline(found)
+      }
+      if (data.preferred_mode) {
+        setActiveMode(data.preferred_mode)
+        try { localStorage.setItem('engibot_mode', data.preferred_mode); } catch {}
       }
       setAuthAlert(null)
       setIsServerOffline(false)
@@ -1622,6 +1565,58 @@ function App() {
                 </div>
               </div>
 
+              {/* Default Operating Mode Selector */}
+              <div className="auth-branch-section">
+                <div className="auth-branch-header">
+                  <BookOpen size={15} className="auth-branch-header-icon" />
+                  <span className="auth-branch-title">Choose Default Operating Mode</span>
+                </div>
+                <p className="auth-branch-subtext">
+                  Choose how EngiBot structures its explanations, calculations, and standards.
+                </p>
+
+                <div className="auth-mode-pills-grid">
+                  <button
+                    type="button"
+                    className={`auth-mode-pill-btn ${registerMode === 'learn' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setRegisterMode('learn');
+                      setRegFormData(prev => ({ ...prev, preferred_mode: 'learn' }));
+                    }}
+                  >
+                    <div className="mode-pill-header">
+                      <BookOpen size={15} className="mode-pill-icon" />
+                      <span className="mode-pill-name">Learn Mode</span>
+                      {registerMode === 'learn' && <Check size={14} className="branch-pill-btn-check" />}
+                    </div>
+                    <span className="mode-pill-desc">Step-by-step guidance, formulas & exam prep concepts</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`auth-mode-pill-btn ${registerMode === 'work' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setRegisterMode('work');
+                      setRegFormData(prev => ({ ...prev, preferred_mode: 'work' }));
+                    }}
+                  >
+                    <div className="mode-pill-header">
+                      <Briefcase size={15} className="mode-pill-icon" />
+                      <span className="mode-pill-name">Work Mode</span>
+                      {registerMode === 'work' && <Check size={14} className="branch-pill-btn-check" />}
+                    </div>
+                    <span className="mode-pill-desc">Concise solutions, engineering standards & field codes</span>
+                  </button>
+                </div>
+
+                <div className="auth-lock-notice">
+                  <ShieldCheck size={14} />
+                  <span>
+                    <strong>Permanent Choice:</strong> Engineering Branch and Operating Mode cannot be changed after account creation.
+                  </span>
+                </div>
+              </div>
+
               <button type="submit" className="save-btn" disabled={isSendingRegOtp}>
                 {isSendingRegOtp ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
@@ -1657,7 +1652,10 @@ function App() {
               </div>
 
               <div className="auth-branch-footer-note" style={{ textAlign: 'center', borderTop: 'none', padding: '0 0 8px' }}>
-                Engineering Branch: <strong>{DISCIPLINES.find(d => d.id === (registerBranch || regFormData.discipline))?.name}</strong>
+                Branch: <strong>{DISCIPLINES.find(d => d.id === (registerBranch || regFormData.discipline))?.name}</strong> • Mode: <strong>{registerMode === 'work' ? 'Work Mode' : 'Learn Mode'}</strong>
+                <div style={{ fontSize: '0.69rem', color: '#64748b', marginTop: '2px' }}>
+                  🔒 Both settings are permanently locked to your account upon creation.
+                </div>
               </div>
 
               <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
@@ -1880,13 +1878,12 @@ function App() {
                 {user.name || user.username}
               </span>
               <div 
-                className="user-profile-branch-badge"
-                onClick={() => setShowBranchModal(true)}
-                title="Your active engineering branch. Click to switch."
+                className="user-profile-branch-badge locked"
+                title={`Engineering Branch: ${activeDiscipline.name} (Permanent)`}
               >
                 <activeDiscipline.icon size={11} />
                 <span>{activeDiscipline.name}</span>
-                <ChevronDown size={11} className="branch-badge-arrow" />
+                <ShieldCheck size={10} style={{ marginLeft: '3px', color: '#2563eb' }} />
               </div>
             </div>
           </div>
@@ -1919,19 +1916,17 @@ function App() {
                   `${activeDiscipline.name} Expert`
                 )}
               </h2>
-              <button 
-                type="button" 
-                className="header-branch-pill" 
-                onClick={() => setShowBranchModal(true)}
-                title="Your active engineering discipline. Click to switch branch."
+              <div 
+                className="header-branch-pill locked" 
+                title={`Engineering Branch: ${activeDiscipline.name} (Permanently locked to your account)`}
               >
                 {(() => {
                   const Icon = activeDiscipline.icon;
                   return <Icon size={14} className="branch-pill-icon" />;
                 })()}
                 <span>{activeDiscipline.name}</span>
-                <ChevronDown size={13} className="branch-pill-arrow" />
-              </button>
+                <ShieldCheck size={12} className="branch-pill-lock" title="Branch is permanently locked" />
+              </div>
             </div>
             <p>
               {currentConversationId ? (
@@ -1942,36 +1937,15 @@ function App() {
             </p>
           </div>
           <div className="header-actions">
-            {/* Mode Switch Toggle */}
-            <button 
-              type="button" 
-              className={`mode-toggle-btn ${activeMode}`}
-              onClick={() => {
-                const next = activeMode === 'learn' ? 'work' : 'learn';
-                setActiveMode(next);
-                try { localStorage.setItem('engibot_mode', next); } catch {}
-              }}
-              title={activeMode === 'learn' ? "Switch to Work Mode (Dense, Standards-cited, Fast)" : "Switch to Learn Mode (Step-by-step, Theory, Quizzes)"}
+            {/* Operating Mode Indicator (Permanent) */}
+            <div 
+              className={`mode-toggle-btn locked ${activeMode}`}
+              title={`Operating Mode: ${activeMode === 'learn' ? 'Learn Mode' : 'Work Mode'} (Permanently locked to your account)`}
             >
               {activeMode === 'learn' ? <BookOpen size={14} /> : <Briefcase size={14} />}
               <span>{activeMode === 'learn' ? 'Learn Mode' : 'Work Mode'}</span>
-            </button>
-
-            {/* Language Selector */}
-            <select 
-              className="lang-select" 
-              value={language} 
-              onChange={(e) => {
-                setLanguage(e.target.value);
-                try { localStorage.setItem('engibot_lang', e.target.value); } catch {}
-              }}
-              title="Select Response Language"
-            >
-              <option value="en">English (EN)</option>
-              <option value="od">ଓଡ଼ିଆ (Odia)</option>
-              <option value="hi">हिन्दी (Hindi)</option>
-              <option value="te">తెలుగు (Telugu)</option>
-            </select>
+              <ShieldCheck size={12} className="mode-pill-lock" title="Operating mode is permanently locked" />
+            </div>
 
             {/* Branch Calculators */}
             <button 
@@ -2412,197 +2386,6 @@ function App() {
           </div>
         </div>
       </main>
-
-      {/* 1. Onboarding & Role Modal */}
-      {showOnboardingModal && (
-        <div className="modal-overlay">
-          <div className="modal-content medium-dialog">
-            <button className="modal-close" onClick={() => setShowOnboardingModal(false)}>
-              <X size={20} />
-            </button>
-            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-              <div className="auth-badge-icon">
-                <GraduationCap size={28} />
-              </div>
-              <h3>Welcome to EngiBot</h3>
-              <p>Customize your engineering experience for university exams or field practice.</p>
-            </div>
-
-            <form onSubmit={handleSaveOnboarding}>
-              <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                  Select Your Role
-                </label>
-                <div className="onboarding-role-grid">
-                  <div 
-                    className={`role-choice-card ${userRole === 'student' ? 'active' : ''}`}
-                    onClick={() => {
-                      setUserRole('student');
-                      setActiveMode('learn');
-                    }}
-                  >
-                    <GraduationCap size={24} color="#3b82f6" />
-                    <h4>College Student</h4>
-                    <p>Syllabus learning, PYQs, exam prep, viva practice, and quizzes.</p>
-                  </div>
-
-                  <div 
-                    className={`role-choice-card ${userRole === 'professional' ? 'active' : ''}`}
-                    onClick={() => {
-                      setUserRole('professional');
-                      setActiveMode('work');
-                    }}
-                  >
-                    <Briefcase size={24} color="#d97706" />
-                    <h4>Field Engineer</h4>
-                    <p>Fast calculations, standard citations (IS/IEC/ASME), and site documentation.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '1.25rem', textAlign: 'left' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                  Select Your Engineering Branch
-                </label>
-                <div className="onboarding-branch-grid">
-                  {DISCIPLINES.map(d => {
-                    const Icon = d.icon;
-                    const isSelected = activeDiscipline.id === d.id;
-                    return (
-                      <div 
-                        key={d.id}
-                        type="button"
-                        className={`onboarding-branch-card ${isSelected ? 'active' : ''}`}
-                        onClick={() => setActiveDiscipline(d)}
-                      >
-                        <Icon size={16} />
-                        <span>{d.name}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {userRole === 'student' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
-                  <div className="calc-field">
-                    <label>University</label>
-                    <select value={university} onChange={(e) => setUniversity(e.target.value)}>
-                      <option value="BPUT">BPUT (Biju Patnaik Univ)</option>
-                      <option value="VTU">VTU (Visvesvaraya Tech)</option>
-                      <option value="Anna Univ">Anna University</option>
-                      <option value="AKTU">AKTU (Dr. APJ Abdul Kalam)</option>
-                      <option value="JNTU">JNTU</option>
-                      <option value="Other">Other Technical University</option>
-                    </select>
-                  </div>
-
-                  <div className="calc-field">
-                    <label>Current Semester</label>
-                    <select value={semester} onChange={(e) => setSemester(parseInt(e.target.value, 10))}>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
-                        <option key={s} value={s}>Semester {s}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
-                  <div className="calc-field">
-                    <label>Industry Sector</label>
-                    <select defaultValue="Civil & Infrastructure">
-                      <option value="Civil & Infrastructure">Civil & Infrastructure</option>
-                      <option value="Power & Electrical Systems">Power & Electrical Systems</option>
-                      <option value="Software & IT">Software & IT</option>
-                      <option value="Electronics & Embedded">Electronics & Embedded</option>
-                      <option value="Manufacturing & Mechanical">Manufacturing & Mechanical</option>
-                    </select>
-                  </div>
-
-                  <div className="calc-field">
-                    <label>Experience</label>
-                    <select value={experienceYears} onChange={(e) => setExperienceYears(parseInt(e.target.value, 10))}>
-                      <option value={1}>0 - 2 Years</option>
-                      <option value={4}>3 - 5 Years</option>
-                      <option value={8}>5 - 10 Years</option>
-                      <option value={12}>10+ Years</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-                <div className="calc-field">
-                  <label>Default Operating Mode</label>
-                  <select value={activeMode} onChange={(e) => setActiveMode(e.target.value)}>
-                    <option value="learn">Learn Mode (Step-by-step)</option>
-                    <option value="work">Work Mode (Concise & Codes)</option>
-                  </select>
-                </div>
-
-                <div className="calc-field">
-                  <label>Language</label>
-                  <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                    <option value="en">English (EN)</option>
-                    <option value="od">ଓଡ଼ିଆ (Odia)</option>
-                    <option value="hi">हिन्दी (Hindi)</option>
-                    <option value="te">తెలుగు (Telugu)</option>
-                  </select>
-                </div>
-              </div>
-
-              <button type="submit" className="save-btn">
-                Save & Start Using EngiBot
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Engineering Branch Switcher Modal */}
-      {showBranchModal && (
-        <div className="modal-overlay" onClick={() => setShowBranchModal(false)}>
-          <div className="modal-content medium-dialog branch-switcher-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowBranchModal(false)} aria-label="Close modal">
-              <X size={20} />
-            </button>
-            <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-              <div className="auth-badge-icon" style={{ background: '#eff6ff', color: '#2563eb' }}>
-                <Layers size={26} />
-              </div>
-              <h3>Select Engineering Branch</h3>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', maxWidth: '440px', margin: '0.35rem auto 0' }}>
-                EngiBot answers questions, solves problems, and cites codes strictly according to your selected discipline.
-              </p>
-            </div>
-
-            <div className="branch-modal-grid">
-              {DISCIPLINES.map(d => {
-                const Icon = d.icon;
-                const isCurrent = activeDiscipline.id === d.id;
-                return (
-                  <div
-                    key={d.id}
-                    className={`branch-modal-card ${isCurrent ? 'active' : ''}`}
-                    onClick={() => handleSelectBranch(d)}
-                  >
-                    <div className="branch-modal-card-top">
-                      <div className="branch-modal-icon">
-                        <Icon size={22} />
-                      </div>
-                      <div className="branch-modal-title">
-                        <h4>{d.name}</h4>
-                        {isCurrent && <span className="branch-active-pill">Active Branch</span>}
-                      </div>
-                    </div>
-                    <p className="branch-modal-desc">{d.desc}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 2. Engineering Calculators Modal */}
       {showCalcModal && (

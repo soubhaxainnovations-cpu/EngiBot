@@ -362,6 +362,7 @@ class RegisterSendOTPRequest(BaseModel):
     username: str
     password: str
     discipline: Optional[str] = "general"
+    preferred_mode: Optional[str] = "learn"
 
 class RegisterVerifyOTPRequest(BaseModel):
     name: str
@@ -371,6 +372,7 @@ class RegisterVerifyOTPRequest(BaseModel):
     username: str
     password: str
     discipline: Optional[str] = "general"
+    preferred_mode: Optional[str] = "learn"
     otp_code: str
 
 class OTPRequest(BaseModel):
@@ -684,7 +686,9 @@ def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get
         email=email_clean,
         username=username_clean,
         password=req.password.strip(),
-        discipline=req.discipline or "general"
+        discipline=req.discipline or "general",
+        preferred_mode=req.preferred_mode or "learn",
+        preferred_language="en"
     )
     db.add(new_user)
     db.commit()
@@ -1466,14 +1470,15 @@ def update_user_profile(profile: ProfileUpdate, db: Session = Depends(get_db)):
         user.university = profile.university
     if profile.semester is not None:
         user.semester = profile.semester
-    if profile.discipline:
+    # Engineering Branch and Operating Mode are permanently locked at account creation
+    if profile.discipline and not getattr(user, "discipline", None):
         user.discipline = profile.discipline
     if profile.experience_years is not None:
         user.experience_years = profile.experience_years
-    if profile.preferred_mode:
+    if profile.preferred_mode and not getattr(user, "preferred_mode", None):
         user.preferred_mode = profile.preferred_mode
     if profile.preferred_language:
-        user.preferred_language = profile.preferred_language
+        user.preferred_language = "en"
     db.commit()
     db.refresh(user)
     return {
