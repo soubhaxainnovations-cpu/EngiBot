@@ -7,8 +7,9 @@ import {
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award,
   Shield, BarChart3, Users, Search, Power, Clock, TrendingUp, Lock,
-  SlidersHorizontal, CreditCard, Server
+  SlidersHorizontal, CreditCard, Server, QrCode, Copy
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import './App.css'
 
 const formatFileSize = (bytes) => {
@@ -280,6 +281,9 @@ function App() {
   const [adminEmailInput, setAdminEmailInput] = useState('')
   const [adminOtpInput, setAdminOtpInput] = useState('')
   const [adminMfaToken, setAdminMfaToken] = useState('')
+  const [adminTotpUri, setAdminTotpUri] = useState('')
+  const [adminTotpSecret, setAdminTotpSecret] = useState('')
+  const [copiedSecret, setCopiedSecret] = useState(false)
   const [adminMfaInput, setAdminMfaInput] = useState('')
   const [adminAuthLoading, setAdminAuthLoading] = useState(false)
   const [adminAuthAlert, setAdminAuthAlert] = useState(null)
@@ -626,8 +630,11 @@ function App() {
       const data = await res.json();
       if (res.ok && data.status === 'mfa_required') {
         setAdminMfaToken(data.mfa_token);
+        setAdminTotpUri(data.totp_uri || '');
+        setAdminTotpSecret(data.totp_secret || '');
+        setAdminMfaInput('');
         setAdminLoginStep('mfa');
-        setAdminAuthAlert({ type: 'success', message: 'OTP verified! Enter your Administrator Master Security PIN / Key.' });
+        setAdminAuthAlert(null);
       } else {
         setAdminAuthAlert({ type: 'error', message: data.detail || 'Invalid or expired OTP code.' });
       }
@@ -641,7 +648,7 @@ function App() {
   const handleAdminVerifyMfa = async (e) => {
     if (e) e.preventDefault();
     if (!adminMfaInput.trim()) {
-      setAdminAuthAlert({ type: 'error', message: 'Please enter your Master Security PIN or Key.' });
+      setAdminAuthAlert({ type: 'error', message: 'Please enter the 6-digit code from your Authenticator app.' });
       return;
     }
     setAdminAuthLoading(true);
@@ -668,9 +675,11 @@ function App() {
         setAdminOtpInput('');
         setAdminMfaInput('');
         setAdminMfaToken('');
+        setAdminTotpUri('');
+        setAdminTotpSecret('');
         fetchAdminData('users', token);
       } else {
-        setAdminAuthAlert({ type: 'error', message: data.detail || 'Invalid Security PIN or Key.' });
+        setAdminAuthAlert({ type: 'error', message: data.detail || 'Invalid Authenticator code. Check your Google Authenticator app and try again.' });
       }
     } catch (err) {
       setAdminAuthAlert({ type: 'error', message: 'Network error verifying MFA.' });
@@ -1370,9 +1379,11 @@ function App() {
         if (res.ok && data.status === 'mfa_required') {
           setAdminEmailInput(emailClean)
           setAdminMfaToken(data.mfa_token)
+          setAdminTotpUri(data.totp_uri || '')
+          setAdminTotpSecret(data.totp_secret || '')
           setAdminLoginStep('mfa')
           setShowAdminModal(true)
-          setAdminAuthAlert({ type: 'success', message: 'OTP verified! Enter your Administrator Master Security PIN / Key.' })
+          setAdminAuthAlert(null)
         } else {
           throw new Error(data.detail || 'Invalid or expired OTP code')
         }
@@ -1797,7 +1808,7 @@ function App() {
           /* ========================================================
              1. DUAL-FACTOR ADMIN LOGIN DIALOG (OTP & MFA)
              ======================================================== */
-          <div className="modal-content admin-login-dialog">
+          <div className={`modal-content admin-login-dialog ${adminLoginStep === 'mfa' ? 'authenticator-step' : ''}`}>
             <button className="modal-close" onClick={() => {
               setShowAdminModal(false);
               setAdminLoginStep('email');
@@ -1917,38 +1928,117 @@ function App() {
               </form>
             )}
 
-            {/* Step 3: Enter MFA Security PIN / Master Key */}
+            {/* Step 2: Authenticator App (TOTP MFA with QR Code) */}
             {adminLoginStep === 'mfa' && (
-              <form onSubmit={handleAdminVerifyMfa} className="admin-step-form">
+              <form onSubmit={handleAdminVerifyMfa} className="admin-step-form admin-mfa-authenticator-form">
                 <div className="admin-step-indicator">
-                  <span className="step-tag completed">✓ OTP Verified</span>
-                  <span className="step-tag active">Step 2: Master MFA</span>
+                  <span className="step-tag completed">✓ 1. Email OTP Verified</span>
+                  <span className="step-tag active">Step 2: Authenticator MFA</span>
                 </div>
-                <p className="admin-step-desc">
-                  Enter your Administrator Master Security PIN or Security Key to complete authentication.
-                </p>
-                <div className="input-group" style={{ marginTop: '1.25rem' }}>
-                  <label>MFA PIN or Master Key</label>
+
+                <div className="mfa-authenticator-header">
+                  <div className="mfa-auth-icon-badge">
+                    <QrCode size={22} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '1.02rem', color: 'var(--text-primary)', fontWeight: 700 }}>
+                      Connect Authenticator App
+                    </h4>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Google Authenticator • Microsoft Authenticator • Apple Passwords
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mfa-qr-section">
+                  <div className="mfa-qr-canvas-box">
+                    {adminTotpUri ? (
+                      <QRCodeSVG 
+                        value={adminTotpUri}
+                        size={170}
+                        level="M"
+                        includeMargin={true}
+                      />
+                    ) : (
+                      <div className="mfa-qr-loading">
+                        <RefreshCw size={24} className="spinner" />
+                        <span>Generating QR Code...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mfa-setup-steps">
+                    <div className="mfa-step-item">
+                      <span className="mfa-step-num">1</span>
+                      <span>Open <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong> on your phone.</span>
+                    </div>
+                    <div className="mfa-step-item">
+                      <span className="mfa-step-num">2</span>
+                      <span>Tap <strong>+</strong> and scan the QR code to add <strong>EngiBot SuperAdmin</strong>.</span>
+                    </div>
+                    <div className="mfa-step-item">
+                      <span className="mfa-step-num">3</span>
+                      <span>Enter the rolling 6-digit verification code below.</span>
+                    </div>
+
+                    {adminTotpSecret && (
+                      <div className="mfa-manual-key-box">
+                        <div className="mfa-manual-key-header">
+                          <span className="mfa-manual-key-title">Manual Secret Key (if cannot scan):</span>
+                          <button
+                            type="button"
+                            className="mfa-copy-key-btn"
+                            onClick={() => {
+                              try {
+                                navigator.clipboard.writeText(adminTotpSecret);
+                                setCopiedSecret(true);
+                                setTimeout(() => setCopiedSecret(false), 2200);
+                              } catch {}
+                            }}
+                          >
+                            {copiedSecret ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                            <span>{copiedSecret ? 'Copied' : 'Copy Key'}</span>
+                          </button>
+                        </div>
+                        <code className="mfa-secret-code">{adminTotpSecret}</code>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="input-group" style={{ marginTop: '0.75rem' }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>6-Digit Authenticator Code</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Changes every 30s</span>
+                  </label>
                   <div className="input-with-icon">
                     <Lock size={16} />
                     <input
-                      type="password"
+                      type="text"
+                      className="admin-mfa-code-input"
                       value={adminMfaInput}
-                      onChange={(e) => setAdminMfaInput(e.target.value)}
-                      placeholder="Enter confidential Master PIN or Key"
+                      onChange={(e) => setAdminMfaInput(e.target.value.replace(/[^0-9A-Za-z-]/g, '').slice(0, 10))}
+                      placeholder="••••••"
+                      maxLength={10}
+                      inputMode="numeric"
                       autoFocus
                       required
                     />
                   </div>
+                  <span className="input-hint">
+                    Enter the dynamic 6-digit rolling code shown in your Authenticator app.
+                  </span>
                 </div>
+
                 <button 
                   type="submit" 
                   className="primary-btn admin-action-btn" 
                   disabled={adminAuthLoading || !adminMfaInput.trim()}
                 >
                   {adminAuthLoading ? <RefreshCw size={16} className="spinner" /> : <ShieldCheck size={16} />}
-                  <span>Verify MFA & Enter Control Center</span>
+                  <span>Verify Authenticator & Enter Admin Console</span>
                 </button>
+
                 <div className="admin-form-actions">
                   <button
                     type="button"

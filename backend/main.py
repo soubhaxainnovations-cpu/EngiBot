@@ -15,6 +15,9 @@ import base64
 import secrets
 import re
 import json
+import hmac
+import hashlib
+import struct
 from dotenv import load_dotenv
 
 from mailer import send_otp_email
@@ -1756,8 +1759,59 @@ ADMIN_MASTER_MFA_PIN = "982461"
 SERVER_START_TIME = datetime.utcnow()
 
 # Ephemeral storage for admin challenges & authenticated sessions
-ADMIN_MFA_CHALLENGES = {}  # token -> {"email": email, "expires": timestamp}
+ADMIN_MFA_CHALLENGES = {}  # token -> {"email": email, "expires": timestamp, "totp_secret": secret}
 ADMIN_ACTIVE_SESSIONS = {} # token -> {"email": email, "expires": timestamp}
+
+def get_admin_totp_secret(email: str) -> str:
+    """
+    Returns a secure 32-character base32 TOTP secret for the admin account.
+    Consistent across restarts so Google Authenticator does not need to be re-scanned repeatedly.
+    """
+    env_secret = os.getenv("ADMIN_TOTP_SECRET")
+    if env_secret and len(env_secret.strip()) >= 16:
+        return env_secret.strip().replace(" ", "").upper()
+    salt = "EngiBot-Master-MFA-2026-SuperAdmin-Salt"
+    h = hashlib.sha256(f"{email.lower().strip()}:{salt}".encode()).digest()[:20]
+    return base64.b32encode(h).decode("ascii").replace("=", "")
+
+def generate_totp(secret: str, interval: int = 30, digits: int = 6) -> str:
+    """RFC 6238 TOTP generator (compatible with Google Authenticator)."""
+    secret = secret.strip().replace(" ", "").upper()
+    missing_padding = len(secret) % 8
+    if missing_padding:
+        secret += "=" * (8 - missing_padding)
+    key = base64.b32decode(secret, casefold=True)
+    counter = int(time.time() // interval)
+    counter_bytes = struct.pack(">Q", counter)
+    h = hmac.new(key, counter_bytes, hashlib.sha1).digest()
+    offset = h[-1] & 0x0F
+    code_int = struct.unpack(">I", h[offset:offset+4])[0] & 0x7FFFFFFF
+    return str(code_int % (10 ** digits)).zfill(digits)
+
+def verify_totp(token: str, secret: str, interval: int = 30, digits: int = 6, valid_window: int = 1) -> bool:
+    """RFC 6238 TOTP validator with +/- 1 interval window drift allowance."""
+    if not token or not secret:
+        return False
+    token_str = token.strip()
+    secret = secret.strip().replace(" ", "").upper()
+    missing_padding = len(secret) % 8
+    if missing_padding:
+        secret += "=" * (8 - missing_padding)
+    try:
+        key = base64.b32decode(secret, casefold=True)
+    except Exception:
+        return False
+    current_counter = int(time.time() // interval)
+    for drift in range(-valid_window, valid_window + 1):
+        counter = current_counter + drift
+        counter_bytes = struct.pack(">Q", counter)
+        h = hmac.new(key, counter_bytes, hashlib.sha1).digest()
+        offset = h[-1] & 0x0F
+        code_int = struct.unpack(">I", h[offset:offset+4])[0] & 0x7FFFFFFF
+        candidate = str(code_int % (10 ** digits)).zfill(digits)
+        if hmac.compare_digest(candidate, token_str):
+            return True
+    return False
 
 def verify_admin_token(authorization: Optional[str] = Header(None), x_admin_token: Optional[str] = Header(None)):
     token = None
@@ -1860,15 +1914,21 @@ def admin_login_verify_otp(req: AdminOTPVerifyRequest, db: Session = Depends(get
 
     # Generate MFA Challenge Session Token (valid for 10 minutes)
     mfa_token = f"mfa_{secrets.token_hex(20)}"
+    totp_secret = get_admin_totp_secret(email_clean)
+    totp_uri = f"otpauth://totp/EngiBot:{email_clean}?secret={totp_secret}&issuer=EngiBot&algorithm=SHA1&digits=6&period=30"
+    
     ADMIN_MFA_CHALLENGES[mfa_token] = {
         "email": email_clean,
+        "totp_secret": totp_secret,
         "expires": time.time() + 600
     }
 
     return {
         "status": "mfa_required",
-        "message": "Email OTP verified. Please enter your Admin MFA Security Key or Authenticator PIN.",
+        "message": "Email OTP verified. Scan the QR code with Google Authenticator and enter the 6-digit rolling code.",
         "mfa_token": mfa_token,
+        "totp_secret": totp_secret,
+        "totp_uri": totp_uri,
         "step": "mfa"
     }
 
@@ -1887,18 +1947,23 @@ def admin_login_verify_mfa(req: AdminMFAVerifyRequest, db: Session = Depends(get
             del ADMIN_MFA_CHALLENGES[mfa_token]
         raise HTTPException(status_code=400, detail="MFA challenge session has expired.")
 
-    # Validate MFA code against configured Admin security keys
-    valid_codes = {
+    totp_secret = challenge.get("totp_secret") or get_admin_totp_secret(email_clean)
+
+    # 1. Primary Check: Standard RFC 6238 TOTP rolling 6-digit code from Google/Microsoft Authenticator
+    is_valid_totp = verify_totp(mfa_code, totp_secret)
+
+    # 2. Secondary Recovery Check: Configured Root Master Key (in case device is inaccessible)
+    is_recovery_key = mfa_code.upper() in {
         ADMIN_MASTER_MFA_KEY.upper(),
-        ADMIN_MASTER_MFA_PIN,
         "ENGIBOT-MFA-2026",
-        "ENGIBOT-MFA-2026-ROOT",
-        "982461",
-        "ADMIN2026"
+        "ENGIBOT-MFA-2026-ROOT"
     }
 
-    if mfa_code.upper() not in valid_codes and mfa_code != ADMIN_MASTER_MFA_KEY:
-        raise HTTPException(status_code=401, detail="Invalid MFA Security Key or Authenticator Code.")
+    if not is_valid_totp and not is_recovery_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Authenticator Code. Please enter the current 6-digit rolling code from your Google Authenticator app."
+        )
 
     # Challenge passed - remove used challenge token
     del ADMIN_MFA_CHALLENGES[mfa_token]
