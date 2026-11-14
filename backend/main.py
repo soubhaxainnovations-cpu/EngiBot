@@ -681,6 +681,62 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
     ollama_model = os.getenv("OLLAMA_MODEL", "engibot-model").strip()
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
+    # 0. Helper function to query Groq API (Ultra-fast, 120B parameter reasoning)
+    def try_groq() -> str:
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        if not groq_key:
+            return None
+        configured_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
+        candidate_models = [
+            configured_model,
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b"
+        ]
+        unique_models = list(dict.fromkeys([m for m in candidate_models if m]))
+
+        messages_payload = [{"role": "system", "content": system_instruction}]
+        for msg in history_messages:
+            role = "user" if getattr(msg, "role", "user") == "user" else "assistant"
+            messages_payload.append({"role": role, "content": getattr(msg, "content", "")})
+        messages_payload.append({"role": "user", "content": new_user_message})
+
+        headers = {
+            "Authorization": f"Bearer {groq_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "EngiBot/1.0"
+        }
+
+        last_error = None
+        for model_name in unique_models:
+            try:
+                payload = {
+                    "model": model_name,
+                    "messages": messages_payload,
+                    "temperature": 0.4
+                }
+                res = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=25
+                )
+                if res.status_code == 200:
+                    result = res.json()
+                    choices = result.get("choices", [])
+                    if choices:
+                        return choices[0]["message"]["content"]
+                else:
+                    last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:120]}"
+                    print(f"[GROQ WARNING] {last_error}. Trying next Groq model...")
+            except Exception as e:
+                last_error = str(e)
+                print(f"[GROQ EXCEPTION] {model_name}: {e}. Trying next model...")
+
+        if last_error:
+            print(f"[AI ROUTER] Groq failed: {last_error}")
+        return None
+
     # 1. Helper function to query Claude API (Anthropic Messages Endpoint)
     def try_claude() -> str:
         claude_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
@@ -820,6 +876,15 @@ def generate_ai_response(system_instruction: str, history_messages: list, new_us
         return response['output']['message']['content'][0]['text']
 
     # AI Execution Priority:
+    # 0. Groq API (Primary high-speed 120B reasoning if configured)
+    if os.getenv("GROQ_API_KEY", "").strip():
+        try:
+            groq_ans = try_groq()
+            if groq_ans:
+                return groq_ans
+        except Exception as e:
+            print(f"[AI ROUTER] Groq API unavailable ({e}). Falling back to next provider...")
+
     # 1. Claude API (if configured)
     if ai_provider in ("claude", "anthropic") or os.getenv("ANTHROPIC_API_KEY", "").strip():
         try:
