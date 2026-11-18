@@ -1517,10 +1517,35 @@
 }
 
 .auth-card.register-card {
-  max-width: 520px;
+  max-width: 530px;
+  max-height: 88vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 2rem 1.75rem;
   width: 100%;
   box-sizing: border-box;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #3b82f6 rgba(0, 0, 0, 0.05);
+}
+
+.auth-card.register-card::-webkit-scrollbar {
+  width: 7px;
+}
+
+.auth-card.register-card::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+
+.auth-card.register-card::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3b82f6, #6366f1);
+  border-radius: 8px;
+}
+
+.auth-card.register-card::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #2563eb, #4f46e5);
 }
 
 .auth-card .brand-icon {
@@ -2057,6 +2082,11 @@
   .auth-card {
     padding: 2rem 1.5rem;
     width: 95%;
+  }
+
+  .auth-card.register-card {
+    max-height: 92vh;
+    padding: 1.5rem 1.15rem;
   }
 
   .modal-content {
