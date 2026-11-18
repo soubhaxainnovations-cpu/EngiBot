@@ -22,6 +22,10 @@ services:
         sync: false # Optional: OpenRouter API Key for free cloud models
       - key: AI_PROVIDER
         value: auto
+      - key: RESEND_API_KEY
+        sync: false # Resend HTTPS API Key for cloud email delivery (bypasses Render SMTP block)
+      - key: RESEND_FROM_EMAIL
+        value: onboarding@resend.dev
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
