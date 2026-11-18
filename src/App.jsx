@@ -246,6 +246,15 @@ function App() {
     }
   })
 
+  // AI Image & Diagram Studio State
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [imagePrompt, setImagePrompt] = useState('')
+  const [imageStyle, setImageStyle] = useState('schematic')
+  const [imageAspectRatio, setImageAspectRatio] = useState('square')
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const [generatedImageResult, setGeneratedImageResult] = useState(null)
+  const [imageGenError, setImageGenError] = useState(null)
+
   // Engineering Calculator State
   const [showCalcModal, setShowCalcModal] = useState(false)
   const [calcTab, setCalcTab] = useState('civil') // 'civil' | 'eee' | 'ece' | 'cse' | 'mech' | 'general'
@@ -962,6 +971,89 @@ function App() {
     } finally {
       setExamLoading(false);
     }
+  };
+
+  const handleGenerateImage = async (customPrompt) => {
+    const promptToUse = (customPrompt || imagePrompt).trim();
+    if (!promptToUse) {
+      setImageGenError("Please enter a prompt describing the diagram or image you want to generate.");
+      return;
+    }
+
+    setIsGeneratingImage(true);
+    setImageGenError(null);
+
+    let width = 768;
+    let height = 768;
+    if (imageAspectRatio === 'landscape') {
+      width = 1024;
+      height = 576;
+    } else if (imageAspectRatio === 'portrait') {
+      width = 576;
+      height = 1024;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/image/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: promptToUse,
+          style: imageStyle,
+          discipline: activeDiscipline.id,
+          width,
+          height,
+          conversation_id: currentConversationId,
+          user_id: user?.id
+        })
+      });
+
+      if (!res.ok) {
+        let errDetail = `Server returned ${res.status}`;
+        try {
+          const errData = await res.json();
+          errDetail = errData.detail || errData.message || errDetail;
+        } catch {}
+        throw new Error(errDetail);
+      }
+
+      const data = await res.json();
+      setGeneratedImageResult(data);
+
+      // If a chat conversation is active, also append directly into chat stream
+      if (currentConversationId) {
+        const botMsg = {
+          role: 'ai',
+          content: `### AI Generated Engineering Visual\n\n**Prompt:** *${promptToUse}*\n\n**Visual Style:** ${imageStyle.toUpperCase()} • **Discipline:** ${activeDiscipline.name}`,
+          model_used: 'AI Image Studio',
+          attachment_url: data.image_url,
+          attachment_type: 'image',
+          file_name: data.file_name,
+          file_size: data.file_size
+        };
+        setMessages(prev => [...prev, botMsg]);
+      }
+    } catch (err) {
+      console.error("Image generation error:", err);
+      setImageGenError(err.message || "Failed to generate image. Please try again.");
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const handleSendImageToChat = () => {
+    if (!generatedImageResult) return;
+    const botMsg = {
+      role: 'ai',
+      content: `### AI Generated Engineering Visual\n\n**Prompt:** *${generatedImageResult.prompt}*\n\n**Visual Style:** ${generatedImageResult.style?.toUpperCase() || 'SCHEMATIC'} • **Discipline:** ${activeDiscipline.name}`,
+      model_used: 'AI Image Studio',
+      attachment_url: generatedImageResult.image_url,
+      attachment_type: 'image',
+      file_name: generatedImageResult.file_name,
+      file_size: generatedImageResult.file_size
+    };
+    setMessages(prev => [...prev, botMsg]);
+    setShowImageModal(false);
   };
 
   const handleEscalateDoubt = async (msgContent) => {
@@ -1969,7 +2061,15 @@ function App() {
       }
       
       const data = await res.json();
-      const botMessage = { role: 'ai', content: data.response, model_used: data.model_used }
+      const botMessage = { 
+        role: 'ai', 
+        content: data.response, 
+        model_used: data.model_used,
+        attachment_url: data.attachment_url,
+        attachment_type: data.attachment_type,
+        file_name: data.file_name,
+        file_size: data.file_size
+      }
       setMessages(prev => {
         const updated = [...prev, botMessage]
         if (autoSpeak && data.response) {
@@ -4849,6 +4949,17 @@ function App() {
               <span>Logs</span>
             </button>
 
+            {/* AI Image & Diagram Studio */}
+            <button 
+              type="button" 
+              className="header-tool-btn" 
+              onClick={() => setShowImageModal(true)}
+              title="AI Engineering Image & Diagram Generator"
+            >
+              <Sparkles size={14} />
+              <span>AI Diagram</span>
+            </button>
+
             {/* Voice Auto-Speak Toggle */}
             <button 
               type="button" 
@@ -5194,6 +5305,17 @@ function App() {
                 >
                   <FileText size={14} />
                   <span>Doc/Code</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="toolbar-action-btn toolbar-pill-btn"
+                  onClick={() => setShowImageModal(true)}
+                  title="Generate AI Engineering Diagram or Visual from Prompt"
+                  disabled={isLoading || isUploading}
+                >
+                  <Sparkles size={14} />
+                  <span>AI Diagram</span>
                 </button>
               </div>
 
@@ -5661,6 +5783,212 @@ function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Image & Diagram Studio Modal */}
+      {showImageModal && (
+        <div className="modal-overlay" onClick={() => setShowImageModal(false)}>
+          <div className="modal-content medium-dialog image-studio-dialog" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowImageModal(false)} title="Close">
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Sparkles size={22} />
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>AI Engineering Image & Diagram Studio</h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Generate technical schematics, 3D CAD renders, circuit diagrams, and blueprints from user prompts.
+                </p>
+              </div>
+            </div>
+
+            {/* Prompt Quick Chips */}
+            <div style={{ textAlign: 'left', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Suggested Prompts for {activeDiscipline.name}:
+              </span>
+            </div>
+            <div className="image-prompt-chips">
+              {activeDiscipline.id === 'eee' ? (
+                <>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Three-phase induction motor stator winding blueprint with magnetic flux lines')}>3-Phase Induction Stator</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Substation transformer one-line diagram with circuit breakers and busbars')}>Substation Single-Line</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Buck-boost DC-DC converter circuit diagram with MOSFET, inductor, and PWM gate signals')}>Buck-Boost DC-DC</button>
+                </>
+              ) : activeDiscipline.id === 'civil' ? (
+                <>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Reinforced concrete cantilever retaining wall cross-section with rebar schedule')}>Retaining Wall Rebar</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Warren truss steel bridge isometric schematic with tension and compression vectors')}>Warren Truss Bridge</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Foundation deep pile cap structural elevation with soil stratigraphy')}>Pile Foundation</button>
+                </>
+              ) : activeDiscipline.id === 'mech' ? (
+                <>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Four-stroke internal combustion engine cylinder cross-section with piston, crankshaft, valves')}>4-Stroke Engine Piston</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Planetary epicyclic gear train exploded 3D CAD schematic with sun, ring, planet gears')}>Planetary Gearbox</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Hydraulic axial piston pump cutaway diagram showing swashplate and pistons')}>Axial Piston Pump</button>
+                </>
+              ) : activeDiscipline.id === 'ece' ? (
+                <>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('CMOS operational amplifier circuit schematic showing differential pair and current mirror')}>CMOS Op-Amp Circuit</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Microstrip patch antenna 2.4 GHz design layout with Smith chart impedance match')}>Patch Antenna Layout</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('FPGA state machine block architecture diagram with registers and ALU datapath')}>FPGA ALU Datapath</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('High-availability microservices distributed architecture diagram with Kubernetes cluster and API Gateway')}>Microservices Architecture</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('B-Tree indexing data structure node split flowchart and pointer linkages')}>B-Tree Node Structure</button>
+                  <button type="button" className="image-chip-btn" onClick={() => setImagePrompt('Transformer neural network attention mechanism architecture with query, key, value matrix multiplication')}>Transformer Attention</button>
+                </>
+              )}
+            </div>
+
+            {/* Prompt Textarea */}
+            <div style={{ marginTop: '0.75rem', textAlign: 'left' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '4px', color: 'var(--text-primary)' }}>
+                Visual Prompt <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <textarea 
+                className="image-prompt-textarea"
+                placeholder="e.g. Cutaway diagram of a gas turbine combustor with airflow streamlines, or Circuit diagram of 555 timer astable multivibrator..."
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {/* Visual Style Selection */}
+            <div style={{ marginTop: '0.85rem', textAlign: 'left' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
+                Visual Style
+              </label>
+              <div className="image-style-grid">
+                {[
+                  { id: 'schematic', title: 'Schematic / Blueprint', desc: 'Technical isometric CAD blueprint' },
+                  { id: 'cad3d', title: '3D CAD Render', desc: 'SolidWorks/Autodesk photorealistic render' },
+                  { id: 'circuit', title: 'Circuit Schematic', desc: 'IEEE/IEC electronic circuit diagram' },
+                  { id: 'civil', title: 'Structural Blueprint', desc: 'Architectural structural section drawing' },
+                  { id: 'flowchart', title: 'Flowchart / Block', desc: 'Clean system architecture diagram' },
+                  { id: 'concept', title: 'Concept Art', desc: 'Futuristic high-tech engineering concept' },
+                ].map(s => (
+                  <div 
+                    key={s.id} 
+                    className={`image-style-card ${imageStyle === s.id ? 'active' : ''}`}
+                    onClick={() => setImageStyle(s.id)}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: imageStyle === s.id ? '#2563eb' : 'var(--text-primary)' }}>{s.title}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{s.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Aspect Ratio Selection */}
+            <div style={{ marginTop: '0.85rem', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>Aspect Ratio:</span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {[
+                  { id: 'square', label: '1:1 Square' },
+                  { id: 'landscape', label: '16:9 Landscape' },
+                  { id: 'portrait', label: '9:16 Portrait' },
+                ].map(ar => (
+                  <button 
+                    key={ar.id}
+                    type="button"
+                    className={`aspect-pill ${imageAspectRatio === ar.id ? 'active' : ''}`}
+                    onClick={() => setImageAspectRatio(ar.id)}
+                  >
+                    {ar.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {imageGenError && (
+              <div style={{ marginTop: '0.75rem', padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: '0.8rem', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <span>{imageGenError}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button 
+                type="button" 
+                className="calc-btn secondary"
+                onClick={() => setShowImageModal(false)}
+                disabled={isGeneratingImage}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="calc-btn primary"
+                onClick={() => handleGenerateImage()}
+                disabled={isGeneratingImage || !imagePrompt.trim()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
+              >
+                {isGeneratingImage ? (
+                  <>
+                    <RefreshCw size={15} className="spinner" />
+                    <span>Rendering Visual...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={15} />
+                    <span>Generate Visual</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Generated Image Result Display */}
+            {generatedImageResult && (
+              <div className="generated-image-result-box">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Generated Output ({generatedImageResult.file_size ? formatFileSize(generatedImageResult.file_size) : ''})
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <a 
+                      href={generatedImageResult.image_url} 
+                      download={generatedImageResult.file_name || 'engineering-diagram.jpg'} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="image-chip-btn"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', background: '#3b82f6', color: '#ffffff', borderColor: '#3b82f6' }}
+                    >
+                      <Download size={12} /> Download
+                    </a>
+                    <button 
+                      type="button" 
+                      className="image-chip-btn"
+                      onClick={handleSendImageToChat}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#10b981', color: '#ffffff', borderColor: '#10b981' }}
+                    >
+                      <Send size={12} /> Send to Chat
+                    </button>
+                  </div>
+                </div>
+
+                <div 
+                  className="generated-image-preview-wrap"
+                  onClick={() => window.open(generatedImageResult.image_url, '_blank')}
+                  title="Click to view full-resolution image"
+                >
+                  <img 
+                    src={generatedImageResult.image_url} 
+                    alt={generatedImageResult.prompt || "Generated Diagram"} 
+                    className="generated-image-preview" 
+                  />
+                </div>
               </div>
             )}
           </div>

@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from mailer import send_otp_email
 from prompts import build_system_prompt, detect_branch_mismatch, format_branch_mismatch_response, DISCIPLINE_METADATA
 import calculators
+from image_generator import generate_image_file, enhance_engineering_prompt
 
 # Directory for user-uploaded images, videos, and files
 UPLOAD_DIR = Path(__file__).parent / "uploads"
@@ -434,6 +435,15 @@ class ChatRequest(BaseModel):
     file_size: Optional[int] = None
     file_text: Optional[str] = None
     model_provider: Optional[str] = "auto"
+
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    style: Optional[str] = "schematic"
+    discipline: Optional[str] = "general"
+    width: Optional[int] = 768
+    height: Optional[int] = 768
+    conversation_id: Optional[int] = None
+    user_id: Optional[int] = None
 
 class ProfileUpdate(BaseModel):
     user_id: int
@@ -1412,6 +1422,39 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 att_info += "\n(The user has shared an engineering video file for discussion.)"
             augmented_prompt = f"{augmented_prompt.strip()}\n{att_info}".strip()
 
+        # Check for Image Generation Intent in user prompt
+        raw_msg = (request.message or "").strip()
+        is_image_intent = bool(re.search(
+            r"^(?:/image|/draw)\b|(?:\b(?:generate|draw|create|render|make)\b.*\b(?:image|diagram|schematic|drawing|sketch|picture|blueprint)\b)",
+            raw_msg,
+            re.IGNORECASE
+        ))
+
+        ai_attachment_url = None
+        ai_attachment_type = None
+        ai_file_name = None
+        ai_file_size = None
+
+        if is_image_intent:
+            clean_img_prompt = re.sub(
+                r"^(?:/image|/draw)\s*|^(?:generate|draw|create|render|make)\s+(?:an?\s+)?(?:image|diagram|schematic|drawing|sketch|picture|blueprint)\s+(?:of\s+)?",
+                "",
+                raw_msg,
+                flags=re.IGNORECASE
+            ).strip() or raw_msg
+
+            img_res = generate_image_file(
+                prompt=clean_img_prompt,
+                style="schematic",
+                discipline=request.discipline or "general"
+            )
+            if img_res.get("success"):
+                ai_attachment_url = img_res["image_url"]
+                ai_attachment_type = "image"
+                ai_file_name = img_res["file_name"]
+                ai_file_size = img_res["file_size"]
+                augmented_prompt += f"\n\n[SYSTEM NOTICE: An engineering image/diagram '{img_res['file_name']}' has been generated for prompt '{clean_img_prompt}'. Please provide a structured technical breakdown and explanation of this schematic/concept.]"
+
         ai_text, model_used = generate_ai_response(
             system_instruction=effective_system_instruction,
             history_messages=history_msgs,
@@ -1426,6 +1469,10 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             role="ai",
             content=ai_text,
             discipline=request.discipline,
+            attachment_url=ai_attachment_url,
+            attachment_type=ai_attachment_type,
+            file_name=ai_file_name,
+            file_size=ai_file_size,
             mode=active_mode,
             language=active_lang,
             model=model_used
@@ -1440,12 +1487,59 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             "conversation_id": conv.id,
             "title": conv.title,
             "discipline": conv.discipline,
-            "mode": active_mode
+            "mode": active_mode,
+            "attachment_url": ai_attachment_url,
+            "attachment_type": ai_attachment_type,
+            "file_name": ai_file_name,
+            "file_size": ai_file_size
         }
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/image/generate")
+def api_generate_image(req: ImageGenerateRequest, db: Session = Depends(get_db)):
+    """Dedicated API endpoint to generate high-resolution AI engineering diagrams and schematics."""
+    result = generate_image_file(
+        prompt=req.prompt,
+        style=req.style or "schematic",
+        discipline=req.discipline or "general",
+        width=req.width or 768,
+        height=req.height or 768
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Image generation failed"))
+
+    # If conversation_id is passed, also append to the conversation messages
+    if req.conversation_id:
+        conv = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
+        if conv:
+            summary = (
+                f"### AI Generated Engineering Visual\n\n"
+                f"**Prompt:** *{req.prompt}*\n\n"
+                f"**Style:** {req.style.title() if req.style else 'Schematic'} • **Discipline:** {req.discipline.upper() if req.discipline else 'General'}\n\n"
+                f"The diagram above illustrates the key components, layout, and structural specifications generated according to your prompt."
+            )
+            msg = ChatMessage(
+                user_id=req.user_id or conv.user_id,
+                conversation_id=conv.id,
+                role="ai",
+                content=summary,
+                discipline=conv.discipline,
+                attachment_url=result["image_url"],
+                attachment_type="image",
+                file_name=result["file_name"],
+                file_size=result["file_size"],
+                model="AI Image Studio"
+            )
+            db.add(msg)
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(msg)
+            result["message_id"] = msg.id
+
+    return result
 
 @app.get("/")
 def root():
