@@ -4249,7 +4249,7 @@ function App() {
                   id="reg-fullName"
                   name="fullName" 
                   type="text" 
-                  placeholder="Enter your Full Name (e.g. Soubhagya Pattanayak)" 
+                  placeholder="Enter your Full Name" 
                   value={regFormData.fullName}
                   onChange={(e) => setRegFormData(prev => ({ ...prev, fullName: e.target.value }))}
                   required 
