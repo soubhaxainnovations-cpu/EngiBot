@@ -3,7 +3,7 @@ import {
   Bot, User, Send, Key,
   Cpu, HardHat, Radio, Zap, Wrench, MessageSquare, LogOut,
   Mail, ShieldCheck, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Edit3, Sparkles, UserPlus,
-  Plus, Trash2, Check, X, Layers, ChevronDown, Globe,
+  Plus, Trash2, Check, X, Layers, ChevronDown, Globe, Calendar, Phone,
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award,
   Shield, BarChart3, Users, Search, Power, Clock, TrendingUp, Lock,
@@ -1503,25 +1503,50 @@ function App() {
       }, 50)
     }
 
-    const fullName = (regFormData.fullName || '').trim()
-    const email = (regFormData.email || '').trim().toLowerCase()
-    const dob = regFormData.dob || ''
-    const phone = (regFormData.phone || '').trim()
-    const username = (regFormData.username || '').trim()
-    const password = (regFormData.password || '').trim()
+    const highlightField = (elementId, message) => {
+      triggerAlert('error', message)
+      const el = document.getElementById(elementId) || document.querySelector(`input[name="${elementId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.focus()
+        el.classList.add('input-error-highlight')
+        setTimeout(() => el.classList.remove('input-error-highlight'), 2000)
+      }
+    }
+
+    // Read directly from DOM to handle browser autofill desync
+    const form = document.querySelector('.register-form-with-branch')
+    const domFullName = form?.elements?.fullName?.value || document.getElementById('reg-fullName')?.value || ''
+    const domEmail = form?.elements?.email?.value || document.getElementById('reg-email')?.value || ''
+    const domDob = form?.elements?.dob?.value || document.getElementById('dob')?.value || ''
+    const domPhone = form?.elements?.phone?.value || document.getElementById('reg-phone')?.value || ''
+    const domUsername = form?.elements?.username?.value || document.getElementById('reg-username')?.value || ''
+    const domPassword = form?.elements?.password?.value || document.getElementById('reg-password')?.value || ''
+
+    const fullName = (regFormData.fullName || domFullName || '').trim()
+    const email = (regFormData.email || domEmail || '').trim().toLowerCase()
+    const dob = (regFormData.dob || domDob || '').trim()
+    const phone = (regFormData.phone || domPhone || '').trim()
+    const username = (regFormData.username || domUsername || '').trim()
+    const password = (regFormData.password || domPassword || '').trim()
     const discipline = registerBranch || regFormData.discipline || 'cse'
     const preferred_mode = registerMode || regFormData.preferred_mode || 'learn'
 
+    // Sync any detected DOM values back into React state
+    if (domFullName && !regFormData.fullName) {
+      setRegFormData(prev => ({ ...prev, fullName: domFullName }))
+    }
+
     if (!fullName) {
-      triggerAlert('error', 'Please enter your Full Name.')
+      highlightField('reg-fullName', 'Please enter your Full Name.')
       return
     }
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
-      triggerAlert('error', 'Please enter a valid email address.')
+      highlightField('reg-email', 'Please enter a valid email address.')
       return
     }
     if (!dob) {
-      triggerAlert('error', 'Please select your Date of Birth.')
+      highlightField('dob', 'Please select your Date of Birth.')
       return
     }
 
@@ -1534,20 +1559,20 @@ function App() {
       age--
     }
     if (age < 18) {
-      triggerAlert('error', 'You must be at least 18 years old to register.')
+      highlightField('dob', 'You must be at least 18 years old to register.')
       return
     }
 
     if (!phone) {
-      triggerAlert('error', 'Please enter your Phone Number.')
+      highlightField('reg-phone', 'Please enter your Phone Number.')
       return
     }
     if (!username) {
-      triggerAlert('error', 'Please choose a Username.')
+      highlightField('reg-username', 'Please choose a Username.')
       return
     }
     if (!password || password.length < 4) {
-      triggerAlert('error', 'Password must be at least 4 characters long.')
+      highlightField('reg-password', 'Password must be at least 4 characters long.')
       return
     }
 
@@ -3888,10 +3913,20 @@ function App() {
                       className="save-btn"
                       style={{ padding: '6px 14px', fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => {
+                        const cleanMail = emailInput.trim().toLowerCase();
+                        const suggestedUser = cleanMail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '');
                         setAuthMode('register');
                         setRegStep('form');
-                        setRegFormData(prev => ({ ...prev, email: emailInput.trim().toLowerCase() }));
+                        setRegFormData(prev => ({ 
+                          ...prev, 
+                          email: cleanMail,
+                          username: prev.username || suggestedUser
+                        }));
                         setAuthAlert(null);
+                        setTimeout(() => {
+                          const nameInput = document.getElementById('reg-fullName') || document.querySelector('input[name="fullName"]');
+                          nameInput?.focus();
+                        }, 100);
                       }}
                     >
                       <UserPlus size={14} />
@@ -4206,27 +4241,43 @@ function App() {
           {/* 3. REGISTRATION FLOW - STEP 1: FORM */}
           {authMode === 'register' && regStep === 'form' && (
             <form onSubmit={handleRegisterSendOtp} noValidate className="auth-form register-form-with-branch">
-              <input 
-                name="fullName" 
-                type="text" 
-                placeholder="Full Name" 
-                value={regFormData.fullName}
-                onChange={(e) => setRegFormData(prev => ({ ...prev, fullName: e.target.value }))}
-                required 
-              />
-              <div className="input-with-icon">
-                <Mail size={18} className="input-icon" />
+              <div className="input-group">
+                <label htmlFor="reg-fullName" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={14} /> Full Name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
                 <input 
+                  id="reg-fullName"
+                  name="fullName" 
+                  type="text" 
+                  placeholder="Enter your Full Name (e.g. Soubhagya Pattanayak)" 
+                  value={regFormData.fullName}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                  required 
+                  autoFocus
+                  autoComplete="name"
+                />
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="reg-email" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Mail size={14} /> Email Address <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  id="reg-email"
                   name="email" 
                   type="email" 
-                  placeholder="Email Address (for Verification & OTP Login)" 
+                  placeholder="name@example.com (for verification OTP)" 
                   value={regFormData.email}
                   onChange={(e) => setRegFormData(prev => ({ ...prev, email: e.target.value }))}
                   required 
+                  autoComplete="email"
                 />
               </div>
+
               <div className="input-group">
-                <label htmlFor="dob" className="input-label">Date of Birth (Must be 18+)</label>
+                <label htmlFor="dob" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calendar size={14} /> Date of Birth <span style={{ color: '#ef4444' }}>* (Must be 18+)</span>
+                </label>
                 <input 
                   name="dob" 
                   id="dob" 
@@ -4236,30 +4287,54 @@ function App() {
                   required 
                 />
               </div>
-              <input 
-                name="phone" 
-                type="tel" 
-                placeholder="Phone Number" 
-                value={regFormData.phone}
-                onChange={(e) => setRegFormData(prev => ({ ...prev, phone: e.target.value }))}
-                required 
-              />
-              <input 
-                name="username" 
-                type="text" 
-                placeholder="Choose Username" 
-                value={regFormData.username}
-                onChange={(e) => setRegFormData(prev => ({ ...prev, username: e.target.value }))}
-                required 
-              />
-              <input 
-                name="password" 
-                type="password" 
-                placeholder="Choose Password (min 4 chars)" 
-                value={regFormData.password}
-                onChange={(e) => setRegFormData(prev => ({ ...prev, password: e.target.value }))}
-                required 
-              />
+
+              <div className="input-group">
+                <label htmlFor="reg-phone" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Phone size={14} /> Phone Number <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  id="reg-phone"
+                  name="phone" 
+                  type="tel" 
+                  placeholder="Mobile number (e.g. 9876543210)" 
+                  value={regFormData.phone}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  required 
+                  autoComplete="tel"
+                />
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="reg-username" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={14} /> Choose Username <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input 
+                  id="reg-username"
+                  name="username" 
+                  type="text" 
+                  placeholder="Choose unique username" 
+                  value={regFormData.username}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, username: e.target.value }))}
+                  required 
+                  autoComplete="username"
+                />
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="reg-password" className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Key size={14} /> Choose Password <span style={{ color: '#ef4444' }}>* (min 4 chars)</span>
+                </label>
+                <input 
+                  id="reg-password"
+                  name="password" 
+                  type="password" 
+                  placeholder="Choose a password (min 4 characters)" 
+                  value={regFormData.password}
+                  onChange={(e) => setRegFormData(prev => ({ ...prev, password: e.target.value }))}
+                  required 
+                  autoComplete="new-password"
+                />
+              </div>
 
               {/* Engineering Branch Selector */}
               <div className="auth-branch-section">
