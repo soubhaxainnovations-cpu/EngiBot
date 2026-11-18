@@ -4296,7 +4296,7 @@ function App() {
                   id="reg-phone"
                   name="phone" 
                   type="tel" 
-                  placeholder="Mobile number (e.g. 9876543210)" 
+                  placeholder="Phone Number" 
                   value={regFormData.phone}
                   onChange={(e) => setRegFormData(prev => ({ ...prev, phone: e.target.value }))}
                   required 
