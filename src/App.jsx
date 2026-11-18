@@ -5958,7 +5958,7 @@ function App() {
                   </span>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <a 
-                      href={generatedImageResult.image_url} 
+                      href={resolveAttachmentUrl(generatedImageResult.image_url)} 
                       download={generatedImageResult.file_name || 'engineering-diagram.jpg'} 
                       target="_blank" 
                       rel="noopener noreferrer"
@@ -5980,11 +5980,11 @@ function App() {
 
                 <div 
                   className="generated-image-preview-wrap"
-                  onClick={() => window.open(generatedImageResult.image_url, '_blank')}
+                  onClick={() => window.open(resolveAttachmentUrl(generatedImageResult.image_url), '_blank')}
                   title="Click to view full-resolution image"
                 >
                   <img 
-                    src={generatedImageResult.image_url} 
+                    src={resolveAttachmentUrl(generatedImageResult.image_url)} 
                     alt={generatedImageResult.prompt || "Generated Diagram"} 
                     className="generated-image-preview" 
                   />

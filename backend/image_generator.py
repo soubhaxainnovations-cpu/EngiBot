@@ -11,6 +11,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 STYLE_MODIFIERS = {
     "schematic": "clean technical engineering schematic diagram, detailed technical drawing, labeled blueprint components, high resolution vector style, crisp white background, 8k",
+    "cad3d": "photorealistic 3D CAD engineering render, octane render, accurate mechanical textures, volumetric lighting, raytracing, high detail 8k",
     "render": "photorealistic 3D CAD engineering render, octane render, accurate mechanical textures, volumetric lighting, raytracing, high detail 8k",
     "circuit": "electronic circuit schematic, standard PCB layout, electrical symbols, wiring diagram, high precision technical diagram",
     "civil": "civil structural blueprint, architectural elevation, IS code standard CAD drawing, engineering line art, structural cross section",
@@ -54,7 +55,8 @@ def generate_image_file(
 ) -> dict:
     """
     Generates an image according to the user prompt and saves it locally in uploads/.
-    Returns a dict with image_url, file_name, file_size, enhanced_prompt.
+    If the server-side download encounters rate-limits or network delay, seamlessly returns
+    a direct client-renderable visual URL so the user's browser renders it instantly.
     """
     clean_prompt = prompt.strip() if prompt else ""
     if not clean_prompt:
@@ -65,80 +67,48 @@ def generate_image_file(
 
     enhanced_prompt = enhance_engineering_prompt(clean_prompt, style=style, discipline=discipline)
     encoded = urllib.parse.quote(enhanced_prompt)
-    seed = int(time.time()) % 100000
+    seed = int(time.time() * 1000) % 999999
+    slug = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_prompt[:25].strip()).strip('_') or 'diagram'
+    direct_url = f"https://image.pollinations.ai/prompt/{encoded}?seed={seed}&nologo=true"
 
-    # Model endpoints to query sequentially
-    endpoints = [
-        f"https://image.pollinations.ai/prompt/{encoded}?seed={seed}",
-        f"https://image.pollinations.ai/prompt/{urllib.parse.quote(clean_prompt + ', technical engineering diagram')}?seed={seed}",
-        f"https://image.pollinations.ai/prompt/{encoded}?model=sana&seed={seed}",
-        f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&seed={seed}"
-    ]
+    # Attempt server-side fetch and caching (quick 8s timeout)
+    try:
+        resp = requests.get(direct_url, timeout=8)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            file_uuid = uuid.uuid4().hex[:10]
+            filename = f"gen_{slug}_{file_uuid}.jpg"
+            file_path = UPLOAD_DIR / filename
 
-    last_err = ""
-    for url in endpoints:
-        try:
-            resp = requests.get(url, timeout=28)
-            if resp.status_code == 200 and len(resp.content) > 1000:
-                file_uuid = uuid.uuid4().hex[:10]
-                slug = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_prompt[:25].strip()).strip('_') or 'diagram'
-                filename = f"gen_{slug}_{file_uuid}.jpg"
-                file_path = UPLOAD_DIR / filename
+            with open(file_path, "wb") as f:
+                f.write(resp.content)
 
-                with open(file_path, "wb") as f:
-                    f.write(resp.content)
+            file_size = len(resp.content)
+            rel_url = f"/uploads/{filename}"
 
-                file_size = len(resp.content)
-                rel_url = f"/uploads/{filename}"
+            print(f"[IMAGE GENERATOR] Successfully generated and cached: {filename} ({file_size} bytes)")
+            return {
+                "success": True,
+                "prompt": clean_prompt,
+                "enhanced_prompt": enhanced_prompt,
+                "image_url": rel_url,
+                "file_name": filename,
+                "file_size": file_size,
+                "attachment_type": "image",
+                "style": style,
+                "is_direct_url": False
+            }
+    except Exception as e:
+        print(f"[IMAGE GENERATOR] Server fetch notice ({e}), using direct client URL")
 
-                print(f"[IMAGE GENERATOR] Successfully generated: {filename} ({file_size} bytes)")
-                return {
-                    "success": True,
-                    "prompt": clean_prompt,
-                    "enhanced_prompt": enhanced_prompt,
-                    "image_url": rel_url,
-                    "file_name": filename,
-                    "file_size": file_size,
-                    "attachment_type": "image",
-                    "style": style
-                }
-            elif resp.status_code == 402:
-                # Free rate limit handling: extract retry after if small
-                try:
-                    data = resp.json()
-                    msg = data.get("error", {}).get("message", "")
-                    match = re.search(r"Retry after (\d+)s", msg)
-                    if match:
-                        wait_sec = min(int(match.group(1)), 4)
-                        time.sleep(wait_sec)
-                        retry_resp = requests.get(url, timeout=25)
-                        if retry_resp.status_code == 200 and len(retry_resp.content) > 1000:
-                            file_uuid = uuid.uuid4().hex[:10]
-                            slug = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_prompt[:25].strip()).strip('_') or 'diagram'
-                            filename = f"gen_{slug}_{file_uuid}.jpg"
-                            file_path = UPLOAD_DIR / filename
-                            with open(file_path, "wb") as f:
-                                f.write(retry_resp.content)
-                            return {
-                                "success": True,
-                                "prompt": clean_prompt,
-                                "enhanced_prompt": enhanced_prompt,
-                                "image_url": f"/uploads/{filename}",
-                                "file_name": filename,
-                                "file_size": len(retry_resp.content),
-                                "attachment_type": "image",
-                                "style": style
-                            }
-                except Exception:
-                    pass
-                last_err = "Generation queue is busy. Please retry in a few seconds."
-            else:
-                last_err = f"HTTP {resp.status_code}"
-        except Exception as e:
-            last_err = str(e)
-            continue
-
+    # Seamless fallback: Direct client URL (user's browser renders with client IP)
     return {
-        "success": False,
-        "error": f"Image generation service notice: {last_err or 'Network timeout'}. Please try clicking Generate again."
+        "success": True,
+        "prompt": clean_prompt,
+        "enhanced_prompt": enhanced_prompt,
+        "image_url": direct_url,
+        "file_name": f"diagram_{slug}_{seed}.jpg",
+        "file_size": 0,
+        "attachment_type": "image",
+        "style": style,
+        "is_direct_url": True
     }
