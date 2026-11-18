@@ -520,6 +520,32 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-height: 290px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+.model-options-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.model-options-list::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.model-options-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.model-options-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .model-option-card {
@@ -596,6 +622,18 @@
   background: #fef3c7;
   color: #b45309;
   border: 1px solid #fde68a;
+}
+
+.model-pill-badge.badge-deepseek {
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
+}
+
+.model-pill-badge.badge-llama {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
 }
 
 .model-pill-badge.badge-openrouter {

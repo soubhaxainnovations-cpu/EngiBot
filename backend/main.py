@@ -965,11 +965,18 @@ def generate_ai_response(
     ollama_model = os.getenv("OLLAMA_MODEL", "engibot-model").strip()
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
-    # 0. Helper function to query Groq API (Ultra-fast, 120B parameter reasoning)
+    # 0. Helper function to query Groq API (Ultra-fast, 120B parameter reasoning with multi-key pool)
     def try_groq():
-        groq_key = os.getenv("GROQ_API_KEY", "").strip()
-        if not groq_key:
+        raw_key_str = os.getenv("GROQ_API_KEY", "").strip()
+        groq_keys = [k.strip() for k in raw_key_str.split(",") if k.strip()] if raw_key_str else []
+        for i in range(1, 10):
+            k = os.getenv(f"GROQ_API_KEY_{i}", "").strip()
+            if k and k not in groq_keys:
+                groq_keys.append(k)
+
+        if not groq_keys:
             return None
+
         configured_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
         candidate_models = [
             configured_model,
@@ -985,40 +992,42 @@ def generate_ai_response(
             messages_payload.append({"role": role, "content": getattr(msg, "content", "")})
         messages_payload.append({"role": "user", "content": new_user_message})
 
-        headers = {
-            "Authorization": f"Bearer {groq_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "EngiBot/1.0"
-        }
-
         last_error = None
-        for model_name in unique_models:
-            try:
-                payload = {
-                    "model": model_name,
-                    "messages": messages_payload,
-                    "temperature": 0.4
-                }
-                res = requests.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=25
-                )
-                if res.status_code == 200:
-                    result = res.json()
-                    choices = result.get("choices", [])
-                    if choices:
-                        return choices[0]["message"]["content"], f"Groq ({model_name})"
-                else:
-                    last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:120]}"
-                    print(f"[GROQ WARNING] {last_error}. Trying next Groq model...")
-            except Exception as e:
-                last_error = str(e)
-                print(f"[GROQ EXCEPTION] {model_name}: {e}. Trying next model...")
+        for key in groq_keys:
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "User-Agent": "EngiBot/1.0"
+            }
+            for model_name in unique_models:
+                try:
+                    payload = {
+                        "model": model_name,
+                        "messages": messages_payload,
+                        "temperature": 0.4
+                    }
+                    res = requests.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=25
+                    )
+                    if res.status_code == 200:
+                        result = res.json()
+                        choices = result.get("choices", [])
+                        if choices:
+                            return choices[0]["message"]["content"], f"Groq ({model_name})"
+                    else:
+                        last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:120]}"
+                        print(f"[GROQ WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}). Trying next model or key...")
+                        if res.status_code in (429, 401, 403):
+                            break
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"[GROQ EXCEPTION] {model_name}: {e}. Trying next model...")
 
         if last_error:
-            print(f"[AI ROUTER] Groq failed: {last_error}")
+            print(f"[AI ROUTER] Groq failed across all keys/models: {last_error}")
         return None
 
     # 1. Helper function to query Claude API (Anthropic Messages Endpoint)
@@ -1076,19 +1085,31 @@ def generate_ai_response(
         else:
             raise Exception(f"Ollama Error ({res.status_code}): {res.text}")
 
-    # 3. Helper function to query OpenRouter AI
-    def try_openrouter():
-        openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        if not openrouter_key:
+    # 3. Helper function to query OpenRouter AI (with multi-key pool, model selection and auto-rotation)
+    def try_openrouter(target_model: Optional[str] = None):
+        raw_key_str = os.getenv("OPENROUTER_API_KEY", "").strip()
+        openrouter_keys = [k.strip() for k in raw_key_str.split(",") if k.strip()] if raw_key_str else []
+        for i in range(1, 10):
+            k = os.getenv(f"OPENROUTER_API_KEY_{i}", "").strip()
+            if k and k not in openrouter_keys:
+                openrouter_keys.append(k)
+
+        if not openrouter_keys:
             return None
+
         configured_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
-        candidate_models = [
+        candidate_models = []
+        if target_model:
+            candidate_models.append(target_model)
+        candidate_models.extend([
             configured_model,
+            "deepseek/deepseek-r1:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
             "nvidia/nemotron-3.5-lightning:free",
             "liquid/lfm-3-1.7b:free",
             "cohere/north-mini-code:free",
             "baidu/ernie-5.5-flash-preview:free"
-        ]
+        ])
         unique_models = list(dict.fromkeys([m for m in candidate_models if m]))
 
         messages_payload = [{"role": "system", "content": system_instruction}]
@@ -1097,40 +1118,43 @@ def generate_ai_response(
             messages_payload.append({"role": role, "content": getattr(msg, "content", "")})
         messages_payload.append({"role": "user", "content": new_user_message})
 
-        headers = {
-            "Authorization": f"Bearer {openrouter_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://engibot.pages.dev",
-            "X-Title": "EngiBot AI Assistant"
-        }
-
         last_error = None
-        for model_name in unique_models:
-            try:
-                payload = {
-                    "model": model_name,
-                    "messages": messages_payload
-                }
-                res = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=30
-                )
-                if res.status_code == 200:
-                    result = res.json()
-                    choices = result.get("choices", [])
-                    if choices:
-                        return choices[0]["message"]["content"], f"OpenRouter ({model_name})"
-                else:
-                    last_error = f"{model_name} HTTP {res.status_code}: {res.text[:120]}"
-                    print(f"[OPENROUTER WARNING] {last_error}. Trying next free model...")
-            except Exception as e:
-                last_error = str(e)
-                print(f"[OPENROUTER EXCEPTION] {model_name}: {e}. Trying next free model...")
+        for key in openrouter_keys:
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://engibot.pages.dev",
+                "X-Title": "EngiBot AI Assistant"
+            }
+            for model_name in unique_models:
+                try:
+                    payload = {
+                        "model": model_name,
+                        "messages": messages_payload
+                    }
+                    res = requests.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=30
+                    )
+                    if res.status_code == 200:
+                        result = res.json()
+                        choices = result.get("choices", [])
+                        if choices:
+                            return choices[0]["message"]["content"], f"OpenRouter ({model_name})"
+                    else:
+                        last_error = f"{model_name} HTTP {res.status_code}: {res.text[:120]}"
+                        print(f"[OPENROUTER WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}). Trying next model or key...")
+                        # If rate limited (429) or quota exhausted (402/401), break to try next key immediately
+                        if res.status_code in (429, 402, 401):
+                            break
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"[OPENROUTER EXCEPTION] {model_name} (Key: ...{key[-6:] if len(key)>=6 else '***'}): {e}. Trying next...")
 
         if last_error:
-            raise Exception(f"All OpenRouter models failed: {last_error}")
+            raise Exception(f"All OpenRouter keys and models failed: {last_error}")
         return None
 
     # 4. Helper function to query AWS Bedrock
@@ -1177,7 +1201,37 @@ def generate_ai_response(
         except Exception:
             pass
 
-    # Case B: Explicitly selected OpenRouter Cloud
+    # Case B: Explicitly selected DeepSeek R1 Reasoning (Powered by OpenRouter pool)
+    elif pref in ("deepseek", "deepseek-r1", "deepseek-reasoner"):
+        try:
+            ds_res = try_openrouter(target_model="deepseek/deepseek-r1:free")
+            if ds_res:
+                return ds_res if return_model else ds_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Explicit DeepSeek request failed ({e}). Falling back to Groq...")
+        try:
+            groq_res = try_groq()
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
+        except Exception:
+            pass
+
+    # Case C: Explicitly selected Meta Llama 3.3 70B (Powered by OpenRouter pool)
+    elif pref in ("llama", "llama-3.3", "llama-70b"):
+        try:
+            llama_res = try_openrouter(target_model="meta-llama/llama-3.3-70b-instruct:free")
+            if llama_res:
+                return llama_res if return_model else llama_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Explicit Llama request failed ({e}). Falling back to OpenRouter pool...")
+        try:
+            or_res = try_openrouter()
+            if or_res:
+                return or_res if return_model else or_res[0]
+        except Exception:
+            pass
+
+    # Case D: Explicitly selected OpenRouter Cloud
     elif pref in ("openrouter", "nemotron", "cloud"):
         try:
             or_res = try_openrouter()
@@ -1192,7 +1246,7 @@ def generate_ai_response(
         except Exception:
             pass
 
-    # Case C: Explicitly selected Local Ollama
+    # Case E: Explicitly selected Local Ollama
     elif pref in ("ollama", "local"):
         try:
             ollama_res = try_ollama()
@@ -1536,12 +1590,13 @@ def get_model_status():
             "base_url": ollama_base_url
         },
         "groq": {
-            "configured": bool(os.getenv("GROQ_API_KEY")),
+            "configured": bool(os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY_2")),
             "model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         },
         "openrouter": {
-            "configured": bool(os.getenv("OPENROUTER_API_KEY")),
-            "model": os.getenv("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+            "configured": bool(os.getenv("OPENROUTER_API_KEY") or any(os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 10))),
+            "model": os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free"),
+            "keys_in_pool": len([k for k in [os.getenv("OPENROUTER_API_KEY", "")] + [os.getenv(f"OPENROUTER_API_KEY_{i}", "") for i in range(1, 10)] if k.strip()])
         },
         "claude": {
             "configured": bool(os.getenv("ANTHROPIC_API_KEY")),

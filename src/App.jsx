@@ -32,15 +32,37 @@ const MODEL_OPTIONS = [
     description: '120-Billion parameter engine. Sub-second speed, best for calculations, formulas & code.'
   },
   {
+    id: 'deepseek',
+    name: 'DeepSeek R1',
+    shortName: 'DeepSeek R1',
+    subtitle: 'OpenRouter • Deep Reasoning',
+    icon: Cpu,
+    color: '#06b6d4',
+    badge: '🧠 Deep Reasoning',
+    badgeClass: 'badge-deepseek',
+    description: 'Chain-of-thought mathematical and engineering reasoning model powered by OpenRouter multi-key pool.'
+  },
+  {
+    id: 'llama',
+    name: 'Llama 3.3 70B',
+    shortName: 'Llama 3.3',
+    subtitle: 'OpenRouter • Meta 70B',
+    icon: Bot,
+    color: '#38bdf8',
+    badge: '⚡ 70B Intelligence',
+    badgeClass: 'badge-llama',
+    description: 'Meta premier 70-Billion open-weights model for comprehensive engineering explanations & theory.'
+  },
+  {
     id: 'openrouter',
     name: 'OpenRouter Cloud',
     shortName: 'OpenRouter',
     subtitle: 'Free Cloud • Nemotron 3.5',
     icon: Globe,
     color: '#3b82f6',
-    badge: '🌐 Free Cloud',
+    badge: '🌐 Multi-Key Cloud',
     badgeClass: 'badge-openrouter',
-    description: 'Dependable cloud backup. Great for conceptual explanations, syllabus Q&A & theory.'
+    description: 'Multi-key pooled cloud backup. Great for conceptual explanations, syllabus Q&A & theory.'
   },
   {
     id: 'auto',
@@ -51,7 +73,7 @@ const MODEL_OPTIONS = [
     color: '#a855f7',
     badge: '✨ Recommended',
     badgeClass: 'badge-auto',
-    description: 'Queries Groq 120B first, auto-fails over to OpenRouter if rate-limited.'
+    description: 'Queries Groq 120B first, auto-fails over to DeepSeek R1 & OpenRouter multi-key pool if rate-limited.'
   }
 ]
 
@@ -1863,8 +1885,14 @@ function App() {
       });
       
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to fetch response');
+        let errMsg = `Server returned status ${res.status}`;
+        try {
+          const err = await res.json();
+          errMsg = err.detail || err.message || errMsg;
+        } catch {
+          errMsg = `Backend server unreachable (${res.status}). Please make sure the backend is running.`;
+        }
+        throw new Error(errMsg);
       }
       
       const data = await res.json();
@@ -4720,7 +4748,7 @@ function App() {
                 <div className="model-dropdown-menu glass-panel">
                   <div className="model-dropdown-header">
                     <span>Select AI Model</span>
-                    <span className="model-count-tag">2 Models Active</span>
+                    <span className="model-count-tag">{MODEL_OPTIONS.length - 1} Models Active</span>
                   </div>
 
                   <div className="model-options-list">
