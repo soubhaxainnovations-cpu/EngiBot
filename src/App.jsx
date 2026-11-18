@@ -1368,34 +1368,38 @@ function App() {
         body: JSON.stringify({ email: emailClean })
       })
 
-      const data = await res.json()
+      let data = null
+      try {
+        data = await res.json()
+      } catch (e) {}
+
       if (!res.ok) {
         if (res.status === 404) {
           setAuthAlert({
             type: 'error',
-            text: data.detail || 'No account registered with this email address. Please click below to create your account.',
+            text: data?.detail || 'No account registered with this email address. Please click below to create your account.',
             isUnregistered: true
           })
           return
         }
-        throw new Error(data.detail || 'Failed to send verification code')
+        throw new Error(data?.detail || data?.message || `Failed to send verification code (${res.status})`)
       }
 
       setOtpStep('enter-code')
       setCountdown(45)
-      setOtpInput(data.demo_otp || '')
+      setOtpInput(data?.demo_otp || '')
       setIsServerOffline(false)
 
       setAuthAlert({ 
-        type: data.demo_otp ? 'warning' : 'success', 
-        text: data.message || `Verification code sent to ${emailClean}. Check your mail inbox.` 
+        type: data?.demo_otp ? 'warning' : 'success', 
+        text: data?.message || `Verification code sent to ${emailClean}. Check your mail inbox.` 
       })
     } catch (err) {
       console.error(err)
-      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError' || err.message?.includes('JSON');
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
-        ? 'Cannot connect to backend server. Please verify your connection or try again in a moment.'
+        ? 'Cannot connect to backend server. The cloud server may be waking up from sleep, please wait 15 seconds and try again.'
         : (err.message || 'Error connecting to server');
       setAuthAlert({ type: 'error', text })
     } finally {
@@ -1555,26 +1559,42 @@ function App() {
         body: JSON.stringify(payload)
       })
 
-      const data = await res.json()
+      let data = null
+      try {
+        data = await res.json()
+      } catch (e) {
+        // Non-JSON response (e.g., HTML 502/504 gateway timeout or offline)
+      }
+
       if (!res.ok) {
-        throw new Error(data.detail || 'Failed to send verification code')
+        let msg = data?.detail || data?.message
+        if (!msg) {
+          if (res.status === 404) {
+            msg = 'Backend registration endpoint not found (404). Please ensure the backend is deployed and running.'
+          } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+            msg = 'Backend server is currently waking up from sleep (Render cold start takes ~30-45s). Please wait a moment and try again.'
+          } else {
+            msg = `Server returned status ${res.status}.`
+          }
+        }
+        throw new Error(msg)
       }
 
       setRegStep('verify-otp')
       setRegCountdown(60)
-      setRegOtpInput(data.demo_otp || '')
+      setRegOtpInput(data?.demo_otp || '')
       setIsServerOffline(false)
 
       setAuthAlert({
-        type: data.demo_otp ? 'warning' : 'success',
-        text: data.message || `Verification code sent to ${email}. Please check your mail inbox.`
+        type: data?.demo_otp ? 'warning' : 'success',
+        text: data?.message || `Verification code sent to ${email}. Please check your mail inbox.`
       })
     } catch (err) {
       console.error(err)
-      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError' || err.message?.includes('JSON');
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
-        ? 'Cannot connect to backend server. Please make sure the backend is running.'
+        ? 'Cannot connect to backend server. The cloud server may be waking up from sleep (Render free tier cold start). Please wait 20-30 seconds and click again.'
         : (err.message || 'Error sending registration verification code.');
       setAuthAlert({ type: 'error', text })
     } finally {
@@ -1616,9 +1636,13 @@ function App() {
         body: JSON.stringify(payload)
       })
 
-      const data = await res.json()
+      let data = null
+      try {
+        data = await res.json()
+      } catch (e) {}
+
       if (!res.ok) {
-        throw new Error(data.detail || 'Registration verification failed')
+        throw new Error(data?.detail || data?.message || `Registration verification failed (${res.status})`)
       }
 
       // Successful registration & verification!
@@ -1636,7 +1660,7 @@ function App() {
       setIsServerOffline(false)
     } catch (err) {
       console.error(err)
-      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError';
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError' || err.message?.includes('JSON');
       if (isConnectionErr) setIsServerOffline(true);
       const text = isConnectionErr
         ? 'Cannot connect to backend server. Please make sure the backend is running.'

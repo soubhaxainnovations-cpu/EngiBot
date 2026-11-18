@@ -234,11 +234,11 @@ def send_otp_email(recipient_email: str, otp_code: str) -> dict:
         msg.attach(MIMEText(plain_text, "plain"))
         msg.attach(MIMEText(html_content, "html"))
 
-        # Connect and send
+        # Connect and send (with fast 5s timeout to prevent freezing on cloud providers that block SMTP)
         if config["port"] == 465:
-            server = smtplib.SMTP_SSL(config["host"], config["port"], timeout=15)
+            server = smtplib.SMTP_SSL(config["host"], config["port"], timeout=5)
         else:
-            server = smtplib.SMTP(config["host"], config["port"], timeout=15)
+            server = smtplib.SMTP(config["host"], config["port"], timeout=5)
             server.ehlo()
             server.starttls()
             server.ehlo()
