@@ -1602,6 +1602,12 @@ def get_model_status():
             "configured": bool(os.getenv("ANTHROPIC_API_KEY")),
             "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
         },
+        "email_service": {
+            "resend_configured": bool(os.getenv("RESEND_API_KEY")),
+            "brevo_configured": bool(os.getenv("BREVO_API_KEY")),
+            "smtp_configured": bool(os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD")),
+            "resend_from": os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+        },
         "database": DB_STATUS["active"],
         "database_target": DB_STATUS["target"],
         "database_connected": DB_STATUS["connected"],

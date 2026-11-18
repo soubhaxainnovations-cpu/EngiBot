@@ -108,6 +108,9 @@ def create_otp_html(otp_code: str, recipient_email: str) -> str:
 
 def send_via_brevo_api(recipient_email: str, otp_code: str) -> dict:
     """Send email over HTTPS port 443 via Brevo (Sendinblue) API (never blocked by Render)."""
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+
     brevo_key = os.getenv("BREVO_API_KEY", "").strip()
     if not brevo_key:
         return {"sent": False, "error": "BREVO_API_KEY not configured"}
@@ -155,6 +158,9 @@ def send_via_brevo_api(recipient_email: str, otp_code: str) -> dict:
 
 def send_via_resend_api(recipient_email: str, otp_code: str) -> dict:
     """Send email over HTTPS port 443 via Resend API (bypasses Render SMTP port blocks)."""
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
     if not resend_key:
         return {"sent": False, "error": "RESEND_API_KEY not configured"}
@@ -178,7 +184,9 @@ def send_via_resend_api(recipient_email: str, otp_code: str) -> dict:
             print(f"[ENGIBOT EMAIL SERVICE] Live OTP email sent via Resend HTTPS API to {recipient_email}")
             return {"sent": True, "message": f"Verification code sent to {recipient_email}"}
         else:
-            return {"sent": False, "error": f"Resend API error: {resp.text}"}
+            err_msg = resp.text
+            print(f"[ENGIBOT RESEND NOTICE] HTTP {resp.status_code}: {err_msg}")
+            return {"sent": False, "error": f"Resend API error: {err_msg}"}
     except Exception as e:
         return {"sent": False, "error": f"Resend request error: {str(e)}"}
 
@@ -195,12 +203,16 @@ def send_otp_email(recipient_email: str, otp_code: str) -> dict:
         res = send_via_brevo_api(email_clean, otp_code)
         if res.get("sent"):
             return res
+        else:
+            print(f"[ENGIBOT EMAIL SERVICE] Brevo failed: {res.get('error')}. Trying next provider...")
 
     # 2. Try Resend HTTPS API if RESEND_API_KEY exists
     if os.getenv("RESEND_API_KEY"):
         res = send_via_resend_api(email_clean, otp_code)
         if res.get("sent"):
             return res
+        else:
+            print(f"[ENGIBOT EMAIL SERVICE] Resend failed: {res.get('error')}. Trying SMTP fallback...")
 
     config = get_smtp_config()
 

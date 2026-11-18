@@ -1495,6 +1495,14 @@ function App() {
     e?.preventDefault()
     setAuthAlert(null)
 
+    const triggerAlert = (type, text) => {
+      setAuthAlert({ type, text })
+      setTimeout(() => {
+        const bottomAlert = document.getElementById('register-bottom-alert') || document.querySelector('.auth-card')
+        bottomAlert?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 50)
+    }
+
     const fullName = (regFormData.fullName || '').trim()
     const email = (regFormData.email || '').trim().toLowerCase()
     const dob = regFormData.dob || ''
@@ -1505,15 +1513,15 @@ function App() {
     const preferred_mode = registerMode || regFormData.preferred_mode || 'learn'
 
     if (!fullName) {
-      setAuthAlert({ type: 'error', text: 'Please enter your Full Name.' })
+      triggerAlert('error', 'Please enter your Full Name.')
       return
     }
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
-      setAuthAlert({ type: 'error', text: 'Please enter a valid email address.' })
+      triggerAlert('error', 'Please enter a valid email address.')
       return
     }
     if (!dob) {
-      setAuthAlert({ type: 'error', text: 'Please enter your Date of Birth.' })
+      triggerAlert('error', 'Please select your Date of Birth.')
       return
     }
 
@@ -1526,20 +1534,20 @@ function App() {
       age--
     }
     if (age < 18) {
-      setAuthAlert({ type: 'error', text: 'You must be at least 18 years old to register.' })
+      triggerAlert('error', 'You must be at least 18 years old to register.')
       return
     }
 
     if (!phone) {
-      setAuthAlert({ type: 'error', text: 'Please enter your Phone Number.' })
+      triggerAlert('error', 'Please enter your Phone Number.')
       return
     }
     if (!username) {
-      setAuthAlert({ type: 'error', text: 'Please choose a Username.' })
+      triggerAlert('error', 'Please choose a Username.')
       return
     }
     if (!password || password.length < 4) {
-      setAuthAlert({ type: 'error', text: 'Password must be at least 4 characters long.' })
+      triggerAlert('error', 'Password must be at least 4 characters long.')
       return
     }
 
@@ -1557,11 +1565,16 @@ function App() {
     }
 
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 35000)
+
       const res = await fetch(`${API_BASE}/api/register/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
 
       let data = null
       try {
@@ -1593,14 +1606,21 @@ function App() {
         type: data?.demo_otp ? 'warning' : 'success',
         text: data?.message || `Verification code sent to ${email}. Please check your mail inbox.`
       })
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }, 50)
     } catch (err) {
       console.error(err)
-      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError' || err.message?.includes('JSON');
-      if (isConnectionErr) setIsServerOffline(true);
+      if (err.name === 'AbortError') {
+        triggerAlert('error', 'Registration request timed out after 35 seconds. Render server may still be waking up. Please click again.')
+        return
+      }
+      const isConnectionErr = err.message === 'Failed to fetch' || err.message?.includes('NetworkError') || err.name === 'TypeError' || err.message?.includes('JSON')
+      if (isConnectionErr) setIsServerOffline(true)
       const text = isConnectionErr
         ? 'Cannot connect to backend server. The cloud server may be waking up from sleep (Render free tier cold start). Please wait 20-30 seconds and click again.'
-        : (err.message || 'Error sending registration verification code.');
-      setAuthAlert({ type: 'error', text })
+        : (err.message || 'Error sending registration verification code.')
+      triggerAlert('error', text)
     } finally {
       setIsSendingRegOtp(false)
     }
@@ -4185,7 +4205,7 @@ function App() {
 
           {/* 3. REGISTRATION FLOW - STEP 1: FORM */}
           {authMode === 'register' && regStep === 'form' && (
-            <form onSubmit={handleRegisterSendOtp} className="auth-form register-form-with-branch">
+            <form onSubmit={handleRegisterSendOtp} noValidate className="auth-form register-form-with-branch">
               <input 
                 name="fullName" 
                 type="text" 
@@ -4329,7 +4349,26 @@ function App() {
                 </div>
               </div>
 
-              <button type="submit" className="save-btn" disabled={isSendingRegOtp}>
+              {/* Instant Visible Alert Feedback above button */}
+              {authAlert && (
+                <div id="register-bottom-alert" className={`auth-alert ${authAlert.type}`} style={{ marginBottom: '1rem', textAlign: 'left' }}>
+                  {authAlert.type === 'error' ? (
+                    <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                  ) : authAlert.type === 'success' ? (
+                    <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                  ) : (
+                    <Sparkles size={16} style={{ flexShrink: 0 }} />
+                  )}
+                  <div style={{ flex: 1 }}>{authAlert.text}</div>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="save-btn" 
+                disabled={isSendingRegOtp}
+                onClick={handleRegisterSendOtp}
+              >
                 {isSendingRegOtp ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     <RefreshCw size={16} className="spinner" /> Sending Verification Code...
