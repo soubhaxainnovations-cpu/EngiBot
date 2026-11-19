@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from mailer import send_otp_email
 from prompts import build_system_prompt, detect_branch_mismatch, format_branch_mismatch_response, DISCIPLINE_METADATA
 import calculators
-from image_generator import generate_image_file, enhance_engineering_prompt
+from image_generator import generate_image_file, research_engineering_topic
 
 # Directory for user-uploaded images, videos, and files
 UPLOAD_DIR = Path(__file__).parent / "uploads"

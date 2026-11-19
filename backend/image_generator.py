@@ -16,6 +16,20 @@ except ImportError:
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def enhance_engineering_prompt(raw_prompt: str, style: str = "schematic", discipline: str = "general") -> str:
+    """Enhance user prompt with targeted engineering and technical visual keywords."""
+    clean_p = re.sub(
+        r"^(generate|draw|create|render|make)(\s+an?)?\s+(image|picture|diagram|schematic|photo|drawing)\s+(of\s+)?",
+        "",
+        raw_prompt.strip(),
+        flags=re.IGNORECASE
+    ).strip()
+    if not clean_p:
+        clean_p = raw_prompt.strip()
+    return f"{clean_p}, {discipline} engineering, technical schematic, labeled components, ISO/IEEE standard"
+
+
 # ---------------------------------------------------------------------------
 # 1. AI Research Engine - Choose Best Model to Deep-Research the Topic
 # ---------------------------------------------------------------------------
