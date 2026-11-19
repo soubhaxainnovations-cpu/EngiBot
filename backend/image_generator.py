@@ -256,8 +256,93 @@ THEMES = {
 }
 
 
-def draw_grid_and_title_block(draw, W: int, H: int, T: dict, data: dict, domain_subtitle: str):
-    """Draws standard blueprint grid, borders, and ISO/ASME/IEEE title block."""
+def get_font(size: int = 14, bold: bool = False):
+    """Safely retrieves a crisp TrueType or FreeType font, falling back gracefully."""
+    candidates = ["arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf", "segoeui.ttf"]
+    if bold:
+        candidates = ["arialbd.ttf", "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "segoeuib.ttf"] + candidates
+    for c in candidates:
+        try:
+            return ImageFont.truetype(c, size)
+        except Exception:
+            pass
+    try:
+        return ImageFont.load_default(size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def get_font_suite() -> dict:
+    """Returns a harmonized hierarchical typographic suite for CAD schematics."""
+    return {
+        "title": get_font(15, bold=True),
+        "header": get_font(11, bold=False),
+        "sec": get_font(12, bold=True),
+        "card_title": get_font(12, bold=True),
+        "body": get_font(11, bold=False),
+        "badge": get_font(10, bold=True),
+        "micro": get_font(9, bold=False)
+    }
+
+
+def wrap_text_pixel(text: str, max_width: int, font, draw) -> list[str]:
+    """Wraps text along natural word boundaries to strictly fit within max_width pixels without slicing."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    words = text.split()
+    lines = []
+    current = []
+
+    for word in words:
+        test_line = " ".join(current + [word])
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        w = bbox[2] - bbox[0]
+        if w <= max_width:
+            current.append(word)
+        else:
+            if current:
+                lines.append(" ".join(current))
+                current = [word]
+            else:
+                lines.append(word)
+                current = []
+    if current:
+        lines.append(" ".join(current))
+    return lines
+
+
+def truncate_to_width(text: str, max_width: int, font, draw) -> str:
+    """Truncates text with '...' to guarantee it never breaches borders or overlaps adjacent cells."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    bbox = draw.textbbox((0, 0), text, font=font)
+    if bbox[2] - bbox[0] <= max_width:
+        return text
+    ell = "..."
+    for i in range(len(text) - 1, 0, -1):
+        cand = text[:i].rstrip() + ell
+        b = draw.textbbox((0, 0), cand, font=font)
+        if b[2] - b[0] <= max_width:
+            return cand
+    return text[:max(1, len(text))]
+
+
+def draw_centered_text(draw, xy: tuple[int, int], text: str, font, fill: str):
+    """Draws text centered exactly at (x, y) coordinates."""
+    x, y = xy
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    draw.text((x - tw // 2, y - th // 2 - 1), text, fill=fill, font=font)
+
+
+def draw_grid_and_title_block(draw, W: int, H: int, T: dict, data: dict, domain_subtitle: str, fonts: Optional[dict] = None):
+    """Draws standard blueprint grid, borders, and ISO/ASME/IEEE title block with perfect alignment."""
+    if fonts is None:
+        fonts = get_font_suite()
+
     for x in range(0, W, 25): draw.line([(x, 0), (x, H)], fill=T["grid_fine"], width=1)
     for y in range(0, H, 25): draw.line([(0, y), (W, y)], fill=T["grid_fine"], width=1)
     for x in range(0, W, 100): draw.line([(x, 0), (x, H)], fill=T["grid_major"], width=1)
@@ -266,28 +351,40 @@ def draw_grid_and_title_block(draw, W: int, H: int, T: dict, data: dict, domain_
     draw.rectangle([(20, 20), (W - 20, H - 20)], outline=T["border"], width=2)
     draw.rectangle([(24, 24), (W - 24, H - 24)], outline=T["grid_major"], width=1)
 
-    # Header
     title = data.get("title", "Engineering Schematic").upper()
     discipline = data.get("discipline", "Engineering").upper()
     standard = data.get("standard", "Standard Spec")
     model = data.get("researched_by_model", "Groq 120B Flagship")
 
-    draw.rectangle([(30, 30), (W - 30, 92)], fill=T["stage_bg"], outline=T["border"], width=1)
-    draw.text((45, 40), f"ENGINEERING TECHNICAL SCHEMATIC: {title[:75]}", fill=T["text_bright"])
-    draw.text((45, 68), f"DISCIPLINE: {discipline}   |   STANDARD: {standard}   |   AI BRAIN: {model}   |   CLASS: {domain_subtitle.upper()}", fill=T["text_light"])
+    # Header Card
+    draw.rectangle([(30, 28), (W - 30, 94)], fill=T["stage_bg"], outline=T["border"], width=1)
+    pref = "ENGINEERING TECHNICAL SCHEMATIC: "
+    max_t_w = (W - 30) - 45 - 20 - (draw.textbbox((0, 0), pref, font=fonts["title"])[2] - draw.textbbox((0, 0), pref, font=fonts["title"])[0])
+    trunc_title = truncate_to_width(title, max_t_w, fonts["title"], draw)
+    draw.text((45, 38), f"{pref}{trunc_title}", fill=T["text_bright"], font=fonts["title"])
 
-    # Title Block (Bottom-Right)
-    tb_x1, tb_y1, tb_x2, tb_y2 = W - 560, H - 105, W - 30, H - 30
+    sub_parts = [
+        f"DISCIPLINE: {discipline}",
+        f"STANDARD: {standard}",
+        f"AI BRAIN: {model}",
+        f"CLASS: {domain_subtitle.upper()}"
+    ]
+    sub_line = truncate_to_width("   |   ".join(sub_parts), W - 90, fonts["header"], draw)
+    draw.text((45, 68), sub_line, fill=T["text_light"], font=fonts["header"])
+
+    # Title Block (Bottom-Right, ISO standard format)
+    tb_w, tb_h = 560, 78
+    tb_x1, tb_y1, tb_x2, tb_y2 = W - 30 - tb_w, H - 30 - tb_h, W - 30, H - 30
     draw.rectangle([(tb_x1, tb_y1), (tb_x2, tb_y2)], fill=T["stage_bg"], outline=T["border"], width=2)
-    draw.line([(tb_x1, tb_y1 + 25), (tb_x2, tb_y1 + 25)], fill=T["border"], width=1)
-    draw.line([(tb_x1, tb_y1 + 50), (tb_x2, tb_y1 + 50)], fill=T["border"], width=1)
-    draw.line([(tb_x1 + 280, tb_y1 + 25), (tb_x1 + 280, tb_y2)], fill=T["border"], width=1)
+    draw.line([(tb_x1, tb_y1 + 26), (tb_x2, tb_y1 + 26)], fill=T["border"], width=1)
+    draw.line([(tb_x1, tb_y1 + 52), (tb_x2, tb_y1 + 52)], fill=T["border"], width=1)
+    draw.line([(tb_x1 + 280, tb_y1 + 26), (tb_x1 + 280, tb_y2)], fill=T["border"], width=1)
 
-    draw.text((tb_x1 + 10, tb_y1 + 6), f"PROJECT: {title[:38]}", fill=T["text_bright"])
-    draw.text((tb_x1 + 10, tb_y1 + 31), f"STD: {standard[:26]}", fill=T["text_light"])
-    draw.text((tb_x1 + 290, tb_y1 + 31), f"BRANCH: {discipline[:16]}", fill=T["text_light"])
-    draw.text((tb_x1 + 10, tb_y1 + 56), f"ENGINE: {model[:26]}", fill=T["border"])
-    draw.text((tb_x1 + 290, tb_y1 + 56), "STATUS: VERIFIED CAD", fill=T["loop"])
+    draw.text((tb_x1 + 10, tb_y1 + 6), f"PROJECT: {truncate_to_width(title, tb_w - 20, fonts['badge'], draw)}", fill=T["text_bright"], font=fonts["badge"])
+    draw.text((tb_x1 + 10, tb_y1 + 32), f"STD: {truncate_to_width(standard, 250, fonts['micro'], draw)}", fill=T["text_light"], font=fonts["micro"])
+    draw.text((tb_x1 + 290, tb_y1 + 32), f"BRANCH: {truncate_to_width(discipline, 250, fonts['micro'], draw)}", fill=T["text_light"], font=fonts["micro"])
+    draw.text((tb_x1 + 10, tb_y1 + 58), f"ENGINE: {truncate_to_width(model, 250, fonts['micro'], draw)}", fill=T["border"], font=fonts["micro"])
+    draw.text((tb_x1 + 290, tb_y1 + 58), "STATUS: VERIFIED CAD", fill=T["loop"], font=fonts["badge"])
 
 
 def render_tree_structure_image(data: dict, W: int = 1400, H: int = 900) -> Image.Image:
@@ -295,13 +392,14 @@ def render_tree_structure_image(data: dict, W: int = 1400, H: int = 900) -> Imag
     T = THEMES["blueprint"]
     img = Image.new("RGB", (W, H), color=T["bg"])
     draw = ImageDraw.Draw(img)
-    draw_grid_and_title_block(draw, W, H, T, data, "Binary Search Tree (BST) & Algorithmic Data Structure")
+    fonts = get_font_suite()
+    draw_grid_and_title_block(draw, W, H, T, data, "Binary Search Tree (BST) & Algorithmic Data Structure", fonts=fonts)
 
     # Left Sidebar: Algorithmic Specifications
-    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 105, 430, H - 120
+    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 110, 440, H - 120
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y2)], fill=T["stage_bg"], outline=T["accent"], width=1)
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y1 + 32)], fill=T["accent"])
-    draw.text((sb_x1 + 15, sb_y1 + 8), "BST PROPERTIES & COMPLEXITY SPECS", fill="#ffffff")
+    draw.text((sb_x1 + 15, sb_y1 + 9), "BST PROPERTIES & COMPLEXITY SPECS", fill="#ffffff", font=fonts["sec"])
 
     specs = [
         ("Structure Type", "Self-Balancing Binary Search Tree (BST)"),
@@ -314,39 +412,41 @@ def render_tree_structure_image(data: dict, W: int = 1400, H: int = 900) -> Imag
     ]
     curr_y = sb_y1 + 42
     for label, val in specs:
-        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 48)], fill=T["bg"], outline=T["grid_major"], width=1)
-        draw.text((sb_x1 + 16, curr_y + 6), label, fill=T["glow"])
-        draw.text((sb_x1 + 16, curr_y + 26), val[:42], fill=T["text_bright"])
-        curr_y += 54
+        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 54)], fill=T["bg"], outline=T["grid_major"], width=1)
+        draw.text((sb_x1 + 16, curr_y + 6), label, fill=T["glow"], font=fonts["card_title"])
+        val_lines = wrap_text_pixel(val, sb_x2 - sb_x1 - 32, fonts["body"], draw)
+        if val_lines:
+            draw.text((sb_x1 + 16, curr_y + 26), val_lines[0], fill=T["text_bright"], font=fonts["body"])
+        curr_y += 62
 
     # Central Tree Canvas
-    cx1, cy1, cx2, cy2 = 450, 105, W - 30, H - 120
+    cx1, cy1, cx2, cy2 = 460, 110, W - 30, H - 120
     draw.rectangle([(cx1, cy1), (cx2, cy2)], fill=T["bg"], outline=T["accent"], width=1)
     draw.rectangle([(cx1, cy1), (cx2, cy1 + 32)], fill=T["stage_header"])
-    draw.text((cx1 + 15, cy1 + 8), "HIERARCHICAL NODE TOPOLOGY & DYNAMIC SEARCH PATH (KEY = 37)", fill="#ffffff")
+    draw.text((cx1 + 15, cy1 + 9), "HIERARCHICAL NODE TOPOLOGY & DYNAMIC SEARCH PATH (KEY = 37)", fill="#ffffff", font=fonts["sec"])
 
     # Draw level indicator lines
     for lvl in range(4):
         ly = cy1 + 75 + lvl * 115
         draw.line([(cx1 + 20, ly), (cx2 - 20, ly)], fill=T["grid_fine"], width=1)
-        draw.text((cx1 + 25, ly - 16), f"LEVEL {lvl} (Depth {lvl})", fill=T["text_dim"])
+        draw.text((cx1 + 25, ly - 16), f"LEVEL {lvl} (Depth {lvl})", fill=T["text_dim"], font=fonts["micro"])
 
     tree_nodes = [
-        (0, "50 [Root]", 0, 900, cy1 + 75, None),
-        (1, "25", 1, 700, cy1 + 190, 0),
-        (2, "75", 1, 1100, cy1 + 190, 0),
-        (3, "12", 2, 600, cy1 + 305, 1),
-        (4, "37", 2, 800, cy1 + 305, 1),
-        (5, "62", 2, 1000, cy1 + 305, 2),
-        (6, "88", 2, 1200, cy1 + 305, 2),
-        (7, "6", 3, 550, cy1 + 420, 3),
-        (8, "18", 3, 650, cy1 + 420, 3),
-        (9, "31", 3, 750, cy1 + 420, 4),
-        (10, "43", 3, 850, cy1 + 420, 4),
-        (11, "55", 3, 950, cy1 + 420, 5),
-        (12, "68", 3, 1050, cy1 + 420, 5),
-        (13, "81", 3, 1150, cy1 + 420, 6),
-        (14, "95", 3, 1250, cy1 + 420, 6),
+        (0, "50 [Root]", 0, 910, cy1 + 75, None),
+        (1, "25", 1, 710, cy1 + 190, 0),
+        (2, "75", 1, 1110, cy1 + 190, 0),
+        (3, "12", 2, 610, cy1 + 305, 1),
+        (4, "37", 2, 810, cy1 + 305, 1),
+        (5, "62", 2, 1010, cy1 + 305, 2),
+        (6, "88", 2, 1210, cy1 + 305, 2),
+        (7, "6", 3, 560, cy1 + 420, 3),
+        (8, "18", 3, 660, cy1 + 420, 3),
+        (9, "31", 3, 760, cy1 + 420, 4),
+        (10, "43", 3, 860, cy1 + 420, 4),
+        (11, "55", 3, 960, cy1 + 420, 5),
+        (12, "68", 3, 1060, cy1 + 420, 5),
+        (13, "81", 3, 1160, cy1 + 420, 6),
+        (14, "95", 3, 1260, cy1 + 420, 6),
     ]
 
     # Draw branches
@@ -359,10 +459,10 @@ def render_tree_structure_image(data: dict, W: int = 1400, H: int = 900) -> Imag
             draw.line([(px, py), (x, y)], fill=col, width=w)
             mid_x, mid_y = (px + x) // 2, (py + y) // 2
             lbl = "L (<)" if x < px else "R (>)"
-            draw.text((mid_x - 12, mid_y - 12), lbl, fill="#fbbf24" if is_path else "#90e0ef")
+            draw_centered_text(draw, (mid_x, mid_y), lbl, fonts["micro"], "#fbbf24" if is_path else "#90e0ef")
 
     # Draw nodes
-    r = 23
+    r = 24
     for nid, val, lvl, x, y, pidx in tree_nodes:
         is_path = nid in [0, 1, 4]
         glow = "#34d399" if is_path else "#00b4d8"
@@ -370,7 +470,9 @@ def render_tree_structure_image(data: dict, W: int = 1400, H: int = 900) -> Imag
         fill_col = "#065f46" if is_path else ("#0284c7" if lvl == 0 else "#0f2048")
         draw.ellipse([(x - r, y - r), (x + r, y + r)], fill=fill_col, outline=glow, width=2)
         txt = val.split()[0]
-        draw.text((x - 8, y - 8), txt, fill="#ffffff")
+        draw_centered_text(draw, (x, y), txt, fonts["badge"], "#ffffff")
+        if len(val.split()) > 1:
+            draw_centered_text(draw, (x, y + r + 11), val.split()[1], fonts["micro"], T["glow"])
 
     return img
 
@@ -380,13 +482,14 @@ def render_circuit_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
     T = THEMES["blueprint"]
     img = Image.new("RGB", (W, H), color=T["bg"])
     draw = ImageDraw.Draw(img)
-    draw_grid_and_title_block(draw, W, H, T, data, "Electronic Circuit Schematic & Semiconductor Topology")
+    fonts = get_font_suite()
+    draw_grid_and_title_block(draw, W, H, T, data, "Electronic Circuit Schematic & Semiconductor Topology", fonts=fonts)
 
     # Left Sidebar: Researched Components
-    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 105, 430, H - 120
+    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 110, 440, H - 120
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y2)], fill=T["stage_bg"], outline=T["accent"], width=1)
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y1 + 32)], fill=T["accent"])
-    draw.text((sb_x1 + 15, sb_y1 + 8), "CIRCUIT BILL OF MATERIALS & SPECS", fill="#ffffff")
+    draw.text((sb_x1 + 15, sb_y1 + 9), "CIRCUIT BILL OF MATERIALS & SPECS", fill="#ffffff", font=fonts["sec"])
 
     comps = data.get("components", [])[:5]
     if not comps:
@@ -397,20 +500,36 @@ def render_circuit_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
             {"name": "Electrolytic Capacitor", "spec": "470 uF 50V Low ESR", "symbol": "C1"},
             {"name": "Load Resistor", "spec": "10 Ohm 50W Precision Power", "symbol": "R1"}
         ]
-    curr_y = sb_y1 + 42
-    for comp in comps:
-        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 60)], fill=T["bg"], outline=T["grid_major"], width=1)
-        draw.rectangle([(sb_x1 + 15, curr_y + 6), (sb_x1 + 65, curr_y + 26)], fill=T["stage_header"])
-        draw.text((sb_x1 + 20, curr_y + 8), comp.get("symbol", "Part")[:5], fill="#ffffff")
-        draw.text((sb_x1 + 75, curr_y + 8), comp.get("name", "Component")[:26], fill=T["text_bright"])
-        draw.text((sb_x1 + 15, curr_y + 34), f"Spec: {comp.get('spec', 'Standard')[:38]}", fill=T["text_dim"])
-        curr_y += 68
+    curr_y = sb_y1 + 44
+    for i, comp in enumerate(comps, 1):
+        card_h = 72
+        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + card_h)], fill=T["bg"], outline=T["grid_major"], width=1)
+        raw_tag = comp.get("symbol", f"P-{i}").strip()
+        tag = re.sub(r'[^A-Za-z0-9_-]', '', raw_tag)[:7].upper() or f"P-{i}"
+        tb = draw.textbbox((0, 0), tag, font=fonts["badge"])
+        tag_w = tb[2] - tb[0]
+        badge_w = max(46, tag_w + 14)
+        draw.rectangle([(sb_x1 + 16, curr_y + 8), (sb_x1 + 16 + badge_w, curr_y + 26)], fill=T["stage_header"])
+        draw.text((sb_x1 + 16 + (badge_w - tag_w) // 2, curr_y + 9), tag, fill="#ffffff", font=fonts["badge"])
+
+        name_x = sb_x1 + 16 + badge_w + 10
+        max_nw = (sb_x2 - 16) - name_x
+        name_txt = truncate_to_width(comp.get("name", "Component"), max_nw, fonts["card_title"], draw)
+        draw.text((name_x, curr_y + 9), name_txt, fill=T["text_bright"], font=fonts["card_title"])
+
+        spec_w = sb_x2 - sb_x1 - 36
+        spec_lines = wrap_text_pixel(f"Spec: {comp.get('spec', 'Standard')}", spec_w, fonts["body"], draw)[:2]
+        if spec_lines:
+            draw.text((sb_x1 + 16, curr_y + 32), spec_lines[0], fill=T["text_dim"], font=fonts["body"])
+        if len(spec_lines) > 1:
+            draw.text((sb_x1 + 16, curr_y + 48), truncate_to_width(spec_lines[1], spec_w, fonts["body"], draw), fill=T["text_dim"], font=fonts["body"])
+        curr_y += card_h + 10
 
     # Circuit Diagram Canvas
-    cx1, cy1, cx2, cy2 = 450, 105, W - 30, H - 120
+    cx1, cy1, cx2, cy2 = 460, 110, W - 30, H - 120
     draw.rectangle([(cx1, cy1), (cx2, cy2)], fill=T["bg"], outline=T["accent"], width=1)
     draw.rectangle([(cx1, cy1), (cx2, cy1 + 32)], fill=T["stage_header"])
-    draw.text((cx1 + 15, cy1 + 8), "ELECTRICAL SCHEMATIC & COMPONENT WIRING DIAGRAM (IEEE STD 315)", fill="#ffffff")
+    draw.text((cx1 + 15, cy1 + 9), "ELECTRICAL SCHEMATIC & COMPONENT WIRING DIAGRAM (IEEE STD 315)", fill="#ffffff", font=fonts["sec"])
 
     # Draw Circuit Rails & Components
     rail_y_top = cy1 + 140
@@ -430,40 +549,40 @@ def render_circuit_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
     draw.ellipse([(x_in - 28, cy1 + 260), (x_in + 28, cy1 + 320)], outline="#f59e0b", width=3)
     draw.line([(x_in, rail_y_top), (x_in, cy1 + 260)], fill="#38bdf8", width=3)
     draw.line([(x_in, cy1 + 320), (x_in, rail_y_bot)], fill="#1e3a8a", width=3)
-    draw.text((x_in - 8, cy1 + 270), "+", fill="#f59e0b")
-    draw.text((x_in - 6, cy1 + 300), "-", fill="#f59e0b")
-    draw.text((x_in - 55, cy1 + 285), "VIN", fill="#38bdf8")
+    draw_centered_text(draw, (x_in, cy1 + 276), "+", fonts["title"], "#f59e0b")
+    draw_centered_text(draw, (x_in, cy1 + 304), "-", fonts["title"], "#f59e0b")
+    draw_centered_text(draw, (x_in - 45, cy1 + 290), "VIN", fonts["card_title"], "#38bdf8")
 
     # 2. Switching MOSFET Q1
     draw.rectangle([(x_sw - 30, rail_y_top - 20), (x_sw + 30, rail_y_top + 20)], fill="#0f2048", outline="#f59e0b", width=2)
-    draw.text((x_sw - 12, rail_y_top - 8), "Q1", fill="#ffffff")
-    draw.text((x_sw - 20, rail_y_top - 40), "MOSFET", fill="#38bdf8")
+    draw_centered_text(draw, (x_sw, rail_y_top), "Q1", fonts["badge"], "#ffffff")
+    draw_centered_text(draw, (x_sw, rail_y_top - 32), "MOSFET (IRFZ44N)", fonts["micro"], "#38bdf8")
 
     # 3. Inductor L1 (Curved coils representation)
     draw.rectangle([(x_ind - 45, rail_y_top - 20), (x_ind + 45, rail_y_top + 20)], fill="#0369a1", outline="#38bdf8", width=2)
-    draw.text((x_ind - 10, rail_y_top - 8), "L1", fill="#ffffff")
-    draw.text((x_ind - 40, rail_y_top - 40), "INDUCTOR (100uH)", fill="#caf0f8")
+    draw_centered_text(draw, (x_ind, rail_y_top), "L1", fonts["badge"], "#ffffff")
+    draw_centered_text(draw, (x_ind, rail_y_top - 32), "INDUCTOR (100uH)", fonts["micro"], "#caf0f8")
 
     # 4. Diode D1 (Cathode bar and Triangle)
     draw.line([(x_diode, rail_y_top), (x_diode, rail_y_bot)], fill="#38bdf8", width=2)
     d_mid_y = (rail_y_top + rail_y_bot) // 2
     draw.polygon([(x_diode - 20, d_mid_y + 15), (x_diode + 20, d_mid_y + 15), (x_diode, d_mid_y - 15)], fill="#ef4444")
     draw.line([(x_diode - 20, d_mid_y - 15), (x_diode + 20, d_mid_y - 15)], fill="#ffffff", width=3)
-    draw.text((x_diode + 15, d_mid_y - 8), "D1 (Diode)", fill="#ef4444")
+    draw.text((x_diode + 22, d_mid_y - 8), "D1 (1N5822)", fill="#ef4444", font=fonts["micro"])
 
     # 5. Capacitor C1
     draw.line([(x_cap, rail_y_top), (x_cap, rail_y_bot)], fill="#38bdf8", width=2)
     c_mid_y = (rail_y_top + rail_y_bot) // 2
     draw.line([(x_cap - 22, c_mid_y - 8), (x_cap + 22, c_mid_y - 8)], fill="#ffffff", width=3)
     draw.line([(x_cap - 22, c_mid_y + 8), (x_cap + 22, c_mid_y + 8)], fill="#ffffff", width=3)
-    draw.text((x_cap + 15, c_mid_y - 8), "C1 (470uF)", fill="#38bdf8")
+    draw.text((x_cap + 22, c_mid_y - 8), "C1 (470uF)", fill="#38bdf8", font=fonts["micro"])
 
     # 6. Load Resistor
     draw.rectangle([(x_load - 18, c_mid_y - 45), (x_load + 18, c_mid_y + 45)], fill="#0f2048", outline="#f59e0b", width=2)
     draw.line([(x_load, rail_y_top), (x_load, c_mid_y - 45)], fill="#38bdf8", width=2)
     draw.line([(x_load, c_mid_y + 45), (x_load, rail_y_bot)], fill="#1e3a8a", width=2)
-    draw.text((x_load - 12, c_mid_y - 8), "RL", fill="#ffffff")
-    draw.text((x_load + 24, c_mid_y - 8), "VOUT", fill="#10b981")
+    draw_centered_text(draw, (x_load, c_mid_y), "RL", fonts["badge"], "#ffffff")
+    draw.text((x_load + 26, c_mid_y - 8), "VOUT", fill="#10b981", font=fonts["badge"])
 
     # Ground Symbols along bottom rail
     for gx in [x_in, x_diode, x_cap, x_load]:
@@ -479,13 +598,14 @@ def render_motor_machine_image(data: dict, W: int = 1400, H: int = 900) -> Image
     T = THEMES["blueprint"]
     img = Image.new("RGB", (W, H), color=T["bg"])
     draw = ImageDraw.Draw(img)
-    draw_grid_and_title_block(draw, W, H, T, data, "Electrical Machine & Stator/Rotor Electromagnetic Cross-Section")
+    fonts = get_font_suite()
+    draw_grid_and_title_block(draw, W, H, T, data, "Electrical Machine & Stator/Rotor Electromagnetic Cross-Section", fonts=fonts)
 
     # Left Sidebar: Machine Parameters
-    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 105, 430, H - 120
+    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 110, 440, H - 120
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y2)], fill=T["stage_bg"], outline=T["accent"], width=1)
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y1 + 32)], fill=T["accent"])
-    draw.text((sb_x1 + 15, sb_y1 + 8), "MOTOR ELECTROMAGNETIC SPECIFICATIONS", fill="#ffffff")
+    draw.text((sb_x1 + 15, sb_y1 + 9), "MOTOR ELECTROMAGNETIC SPECS", fill="#ffffff", font=fonts["sec"])
 
     specs = [
         ("Machine Type", "Three-Phase Squirrel Cage Induction Motor"),
@@ -498,16 +618,18 @@ def render_motor_machine_image(data: dict, W: int = 1400, H: int = 900) -> Image
     ]
     curr_y = sb_y1 + 42
     for label, val in specs:
-        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 48)], fill=T["bg"], outline=T["grid_major"], width=1)
-        draw.text((sb_x1 + 16, curr_y + 6), label, fill=T["glow"])
-        draw.text((sb_x1 + 16, curr_y + 26), val[:42], fill=T["text_bright"])
-        curr_y += 54
+        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 54)], fill=T["bg"], outline=T["grid_major"], width=1)
+        draw.text((sb_x1 + 16, curr_y + 6), label, fill=T["glow"], font=fonts["card_title"])
+        val_lines = wrap_text_pixel(val, sb_x2 - sb_x1 - 32, fonts["body"], draw)
+        if val_lines:
+            draw.text((sb_x1 + 16, curr_y + 26), val_lines[0], fill=T["text_bright"], font=fonts["body"])
+        curr_y += 62
 
     # Central Canvas: Stator and Rotor Cutaway
-    cx1, cy1, cx2, cy2 = 450, 105, W - 30, H - 120
+    cx1, cy1, cx2, cy2 = 460, 110, W - 30, H - 120
     draw.rectangle([(cx1, cy1), (cx2, cy2)], fill=T["bg"], outline=T["accent"], width=1)
     draw.rectangle([(cx1, cy1), (cx2, cy1 + 32)], fill=T["stage_header"])
-    draw.text((cx1 + 15, cy1 + 8), "CROSS-SECTIONAL CAD SCHEMATIC: STATOR SLOTS, COILS & ROTOR BARS", fill="#ffffff")
+    draw.text((cx1 + 15, cy1 + 9), "CROSS-SECTIONAL CAD SCHEMATIC: STATOR SLOTS, COILS & ROTOR BARS", fill="#ffffff", font=fonts["sec"])
 
     center_x = (cx1 + cx2) // 2
     center_y = cy1 + 320
@@ -523,10 +645,10 @@ def render_motor_machine_image(data: dict, W: int = 1400, H: int = 900) -> Image
     draw.ellipse([(center_x - r_rotor, center_y - r_rotor), (center_x + r_rotor, center_y + r_rotor)], fill="#0369a1", outline="#f59e0b", width=2)
     r_shaft = 35
     draw.ellipse([(center_x - r_shaft, center_y - r_shaft), (center_x + r_shaft, center_y + r_shaft)], fill="#0284c7", outline="#ffffff", width=2)
-    draw.text((center_x - 18, center_y - 8), "SHAFT", fill="#ffffff")
+    draw_centered_text(draw, (center_x, center_y), "SHAFT", fonts["badge"], "#ffffff")
 
     # 3. Stator Winding Coils (12 Slots around circle, 3-Phase color coded)
-    phase_colors = ["#ef4444", "#f59e0b", "#3b82f6"] # Phase A (Red), Phase B (Yellow), Phase C (Blue)
+    phase_colors = ["#ef4444", "#f59e0b", "#3b82f6"]
     for i in range(12):
         angle = i * (2 * math.pi / 12)
         sx = center_x + int(145 * math.cos(angle))
@@ -534,7 +656,7 @@ def render_motor_machine_image(data: dict, W: int = 1400, H: int = 900) -> Image
         color = phase_colors[i % 3]
         draw.ellipse([(sx - 14, sy - 14), (sx + 14, sy + 14)], fill=color, outline="#ffffff", width=1)
         phase_label = ["A", "B", "C"][i % 3]
-        draw.text((sx - 5, sy - 7), phase_label, fill="#ffffff")
+        draw_centered_text(draw, (sx, sy), phase_label, fonts["badge"], "#ffffff")
 
     # 4. Rotor Bars (Inside rotor core)
     for i in range(16):
@@ -544,80 +666,116 @@ def render_motor_machine_image(data: dict, W: int = 1400, H: int = 900) -> Image
         draw.ellipse([(rx - 7, ry - 7), (rx + 7, ry + 7)], fill="#f59e0b", outline="#ffffff", width=1)
 
     # Annotations
-    draw.text((center_x - 180, center_y - 250), "STATOR LAMINATED CORE", fill="#38bdf8")
-    draw.text((center_x + 90, center_y - 160), "3-PHASE COILS (A, B, C)", fill="#caf0f8")
-    draw.text((center_x + 130, center_y + 80), "AIR GAP (0.5mm)", fill="#f59e0b")
-    draw.text((center_x - 160, center_y + 160), "ROTOR SQUIRREL-CAGE BARS", fill="#10b981")
+    draw.text((center_x - 180, center_y - 250), "STATOR LAMINATED CORE", fill="#38bdf8", font=fonts["card_title"])
+    draw.text((center_x + 90, center_y - 160), "3-PHASE COILS (A, B, C)", fill="#caf0f8", font=fonts["card_title"])
+    draw.text((center_x + 130, center_y + 80), "AIR GAP (0.5mm)", fill="#f59e0b", font=fonts["card_title"])
+    draw.text((center_x - 160, center_y + 160), "ROTOR SQUIRREL-CAGE BARS", fill="#10b981", font=fonts["card_title"])
 
     return img
 
 
 def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> Image.Image:
-    """Renders clean modular system architecture with stages and component specs."""
+    """Renders clean modular system architecture with stages, specs, and guaranteed alignment."""
     T = THEMES["blueprint"]
     img = Image.new("RGB", (W, H), color=T["bg"])
     draw = ImageDraw.Draw(img)
-    draw_grid_and_title_block(draw, W, H, T, data, "System Architecture & Engineering Specification")
+    fonts = get_font_suite()
+    draw_grid_and_title_block(draw, W, H, T, data, "System Architecture & Engineering Specification", fonts=fonts)
 
     # Left Sidebar: Bill of Materials
-    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 105, 430, H - 120
+    sb_x1, sb_y1, sb_x2, sb_y2 = 30, 110, 440, H - 120
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y2)], fill=T["stage_bg"], outline=T["accent"], width=1)
     draw.rectangle([(sb_x1, sb_y1), (sb_x2, sb_y1 + 32)], fill=T["accent"])
-    draw.text((sb_x1 + 12, sb_y1 + 8), "RESEARCHED BILL OF MATERIALS & SPECS", fill="#ffffff")
+    draw.text((sb_x1 + 15, sb_y1 + 9), "RESEARCHED BILL OF MATERIALS & SPECS", fill="#ffffff", font=fonts["sec"])
 
     components = data.get("components", [])[:5]
-    curr_y = sb_y1 + 42
+    curr_y = sb_y1 + 44
     for i, comp in enumerate(components, 1):
-        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + 60)], fill=T["bg"], outline=T["grid_major"], width=1)
-        tag = comp.get("symbol", f"M-{i}")
-        draw.rectangle([(sb_x1 + 15, curr_y + 6), (sb_x1 + 65, curr_y + 26)], fill=T["stage_header"])
-        draw.text((sb_x1 + 20, curr_y + 8), tag, fill="#ffffff")
-        draw.text((sb_x1 + 75, curr_y + 8), comp.get("name", "Component")[:26], fill=T["text_bright"])
-        draw.text((sb_x1 + 15, curr_y + 34), f"Spec: {comp.get('spec', 'Engineering standard')[:38]}", fill=T["text_dim"])
-        curr_y += 68
+        card_h = 72
+        draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + card_h)], fill=T["bg"], outline=T["grid_major"], width=1)
+        raw_tag = comp.get("symbol", f"M-{i}").strip()
+        tag = re.sub(r'[^A-Za-z0-9_-]', '', raw_tag)[:7].upper() or f"M-{i}"
+        tb = draw.textbbox((0, 0), tag, font=fonts["badge"])
+        tag_w = tb[2] - tb[0]
+        badge_w = max(46, tag_w + 14)
+        draw.rectangle([(sb_x1 + 16, curr_y + 8), (sb_x1 + 16 + badge_w, curr_y + 26)], fill=T["stage_header"])
+        draw.text((sb_x1 + 16 + (badge_w - tag_w) // 2, curr_y + 9), tag, fill="#ffffff", font=fonts["badge"])
 
-    # Central Canvas: Stages
-    cx1, cy1, cx2, cy2 = 450, 105, W - 30, H - 120
+        name_x = sb_x1 + 16 + badge_w + 10
+        max_nw = (sb_x2 - 16) - name_x
+        name_txt = truncate_to_width(comp.get("name", "Component"), max_nw, fonts["card_title"], draw)
+        draw.text((name_x, curr_y + 9), name_txt, fill=T["text_bright"], font=fonts["card_title"])
+
+        spec_w = sb_x2 - sb_x1 - 36
+        spec_lines = wrap_text_pixel(f"Spec: {comp.get('spec', 'Engineering standard')}", spec_w, fonts["body"], draw)[:2]
+        if spec_lines:
+            draw.text((sb_x1 + 16, curr_y + 32), spec_lines[0], fill=T["text_dim"], font=fonts["body"])
+        if len(spec_lines) > 1:
+            draw.text((sb_x1 + 16, curr_y + 48), truncate_to_width(spec_lines[1], spec_w, fonts["body"], draw), fill=T["text_dim"], font=fonts["body"])
+        curr_y += card_h + 10
+
+    # Central Canvas: Stages & Interconnections
+    cx1, cy1, cx2, cy2 = 460, 110, W - 30, H - 120
     draw.rectangle([(cx1, cy1), (cx2, cy2)], fill=T["stage_bg"], outline=T["accent"], width=1)
     draw.rectangle([(cx1, cy1), (cx2, cy1 + 32)], fill=T["stage_header"])
-    draw.text((cx1 + 15, cy1 + 8), "SCHEMATIC TOPOLOGY & INTERCONNECTION ARCHITECTURE", fill="#ffffff")
+    draw.text((cx1 + 15, cy1 + 9), "SCHEMATIC TOPOLOGY & INTERCONNECTION ARCHITECTURE", fill="#ffffff", font=fonts["sec"])
 
     stages = data.get("stages", [])[:4]
-    num_stages = max(len(stages), 1)
-    block_w = min(180, (cx2 - cx1 - 60) // num_stages - 25)
-    block_h = 160
+    n = len(stages)
+    block_w = 175
+    block_h = 240
+    gap = ((cx2 - cx1 - 60) - (n * block_w)) // max(1, n - 1)
     start_x = cx1 + 30
-    gap = (cx2 - cx1 - 60 - (num_stages * block_w)) // max(1, num_stages - 1)
-    stage_y = cy1 + 90
+    stage_y = cy1 + 70
 
     for i, stage in enumerate(stages):
         bx = start_x + i * (block_w + gap)
         by = stage_y
         draw.rectangle([(bx, by), (bx + block_w, by + block_h)], fill=T["bg"], outline=T["border"], width=2)
         draw.rectangle([(bx, by), (bx + block_w, by + 28)], fill=T["stage_header"])
-        draw.text((bx + 10, by + 6), f"STAGE {i+1}", fill="#ffffff")
 
-        lines = [stage.get("name", "")[:18], stage.get("name", "")[18:36], "", stage.get("desc", "")[:20], stage.get("desc", "")[20:40]]
+        st_lbl = f"STAGE {i+1}"
+        st_b = draw.textbbox((0, 0), st_lbl, font=fonts["badge"])
+        st_w = st_b[2] - st_b[0]
+        draw.text((bx + (block_w - st_w) // 2, by + 7), st_lbl, fill="#ffffff", font=fonts["badge"])
+
+        name_lines = wrap_text_pixel(stage.get("name", "Stage"), block_w - 18, fonts["card_title"], draw)[:2]
         ty = by + 36
-        for line in lines:
-            if line:
-                draw.text((bx + 8, ty), line, fill=T["text_bright"])
-            ty += 16
+        for nl in name_lines:
+            draw.text((bx + 10, ty), nl, fill=T["text_bright"], font=fonts["card_title"])
+            ty += 18
 
-        if i < num_stages - 1:
-            arr_x1 = bx + block_w
-            arr_x2 = bx + block_w + gap
-            arr_y = by + block_h // 2
+        sep_y = by + 80
+        draw.line([(bx + 8, sep_y), (bx + block_w - 8, sep_y)], fill=T["grid_major"], width=1)
+        draw.text((bx + 10, sep_y + 8), "Function / Logic:", fill=T["glow"], font=fonts["micro"])
+
+        desc_lines = wrap_text_pixel(stage.get("desc", ""), block_w - 18, fonts["body"], draw)[:4]
+        dy = sep_y + 24
+        for dl in desc_lines:
+            draw.text((bx + 10, dy), dl, fill=T["text_light"], font=fonts["body"])
+            dy += 16
+
+        # Flow Arrow: Drawn strictly in the gap BETWEEN blocks with zero text collision
+        if i < n - 1:
+            arr_x1 = bx + block_w + 4
+            arr_x2 = bx + block_w + gap - 4
+            arr_y = by + 56
             draw.line([(arr_x1, arr_y), (arr_x2, arr_y)], fill=T["arrow"], width=3)
-            draw.polygon([(arr_x2, arr_y), (arr_x2 - 10, arr_y - 6), (arr_x2 - 10, arr_y + 6)], fill=T["arrow"])
-            draw.text((arr_x1 + 6, arr_y - 18), "FLOW", fill=T["arrow"])
+            draw.polygon([(arr_x2, arr_y), (arr_x2 - 8, arr_y - 5), (arr_x2 - 8, arr_y + 5)], fill=T["arrow"])
+            lbl = "FLOW"
+            lw = draw.textbbox((0, 0), lbl, font=fonts["micro"])[2] - draw.textbbox((0, 0), lbl, font=fonts["micro"])[0]
+            draw.text((arr_x1 + (arr_x2 - arr_x1 - lw) // 2, arr_y - 14), lbl, fill=T["arrow"], font=fonts["micro"])
 
     # Closed-Loop Feedback Regulation Bus
-    fb_y = stage_y + block_h + 80
+    fb_y = stage_y + block_h + 60
     draw.line([(start_x + block_w // 2, stage_y + block_h), (start_x + block_w // 2, fb_y)], fill=T["loop"], width=2)
-    draw.line([(start_x + block_w // 2, fb_y), (start_x + (num_stages - 1) * (block_w + gap) + block_w // 2, fb_y)], fill=T["loop"], width=2)
-    draw.line([(start_x + (num_stages - 1) * (block_w + gap) + block_w // 2, stage_y + block_h), (start_x + (num_stages - 1) * (block_w + gap) + block_w // 2, fb_y)], fill=T["loop"], width=2)
-    draw.text((start_x + 80, fb_y + 8), "CLOSED-LOOP REGULATION & MONITORING BUS", fill=T["loop"])
+    draw.line([(start_x + block_w // 2, fb_y), (start_x + (n - 1) * (block_w + gap) + block_w // 2, fb_y)], fill=T["loop"], width=2)
+    draw.line([(start_x + (n - 1) * (block_w + gap) + block_w // 2, stage_y + block_h), (start_x + (n - 1) * (block_w + gap) + block_w // 2, fb_y)], fill=T["loop"], width=2)
+
+    bus_lbl = "CLOSED-LOOP FEEDBACK REGULATION & MONITORING BUS"
+    bus_w = draw.textbbox((0, 0), bus_lbl, font=fonts["badge"])[2] - draw.textbbox((0, 0), bus_lbl, font=fonts["badge"])[0]
+    bus_x = start_x + ((n * (block_w + gap) - gap) - bus_w) // 2
+    draw.text((max(start_x + 20, bus_x), fb_y + 10), bus_lbl, fill=T["loop"], font=fonts["badge"])
 
     return img
 
@@ -628,10 +786,13 @@ def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
 
 def generate_vector_svg(data: dict, domain: str, w: int, h: int) -> str:
     """Generates an infinite-resolution vector SVG engineering schematic."""
-    title = data.get("title", "Engineering Schematic")
-    standard = data.get("standard", "Standard Spec")
-    discipline = data.get("discipline", "Engineering")
-    model = data.get("researched_by_model", "Groq 120B Flagship")
+    def esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    title = esc(data.get("title", "Engineering Schematic")[:60])
+    standard = esc(data.get("standard", "Standard Spec")[:32])
+    discipline = esc(data.get("discipline", "Engineering")[:24])
+    model = esc(data.get("researched_by_model", "Groq 120B Flagship")[:28])
 
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="100%" height="100%">
   <defs>
