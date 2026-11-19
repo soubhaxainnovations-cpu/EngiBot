@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SAFE_STATUS_BAR_HEIGHT = Platform.OS === 'android' ? ((StatusBar.currentHeight || 28) + 8) : 4;
 const DEFAULT_API_URL = 'https://engibot-n8e6.onrender.com';
 const LOCAL_WIFI_URL = 'http://192.168.1.35:8000';
 
@@ -1191,6 +1192,7 @@ const styles = StyleSheet.create({
   },
   authContainer: {
     flex: 1,
+    paddingTop: SAFE_STATUS_BAR_HEIGHT,
   },
   authScroll: {
     padding: 24,
@@ -1332,9 +1334,10 @@ const styles = StyleSheet.create({
   // Main Workspace
   mainWorkspace: {
     flex: 1,
+    paddingTop: SAFE_STATUS_BAR_HEIGHT,
   },
   chatGptHeader: {
-    height: 52,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1342,17 +1345,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerIconBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 22,
   },
   modelDropdownPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
   },
   modelDropdownTitle: {
@@ -1578,7 +1582,7 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH * 0.78,
     maxWidth: 320,
     height: '100%',
-    paddingTop: Platform.OS === 'ios' ? 44 : 20,
+    paddingTop: Platform.OS === 'ios' ? 48 : (SAFE_STATUS_BAR_HEIGHT + 10),
   },
   drawerTop: {
     flexDirection: 'row',
