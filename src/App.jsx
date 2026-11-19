@@ -251,6 +251,8 @@ function App() {
   const [imagePrompt, setImagePrompt] = useState('')
   const [imageStyle, setImageStyle] = useState('schematic')
   const [imageAspectRatio, setImageAspectRatio] = useState('square')
+  const [imageResearchModel, setImageResearchModel] = useState('auto')
+  const [showResearchDossier, setShowResearchDossier] = useState(true)
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [generatedImageResult, setGeneratedImageResult] = useState(null)
   const [imageGenError, setImageGenError] = useState(null)
@@ -1003,6 +1005,7 @@ function App() {
           discipline: activeDiscipline.id,
           width,
           height,
+          research_model: imageResearchModel,
           conversation_id: currentConversationId,
           user_id: user?.id
         })
@@ -1022,10 +1025,12 @@ function App() {
 
       // If a chat conversation is active, also append directly into chat stream
       if (currentConversationId) {
+        const dossier = data.research_dossier || {};
+        const compsList = (dossier.components || []).slice(0, 4).map(c => `- **${c.name}** (\`${c.symbol || 'Part'}\`): ${c.spec}`).join('\n');
         const botMsg = {
           role: 'ai',
-          content: `### AI Generated Engineering Visual\n\n**Prompt:** *${promptToUse}*\n\n**Visual Style:** ${imageStyle.toUpperCase()} • **Discipline:** ${activeDiscipline.name}`,
-          model_used: 'AI Image Studio',
+          content: `### AI Researched Engineering Schematic\n\n**Visual Title:** *${dossier.title || promptToUse}*\n\n🧠 **Research Brain:** ${data.researched_by || 'AI Model'} • 📜 **Standard:** \`${data.standard_cited || 'IEEE/ASME'}\`\n\n${compsList ? `**Key Researched Components:**\n${compsList}\n\n` : ''}*Generated natively by EngiBot Engineering Visual Engine.*`,
+          model_used: `AI Visual (${data.researched_by || 'Engine'})`,
           attachment_url: data.image_url,
           attachment_type: 'image',
           file_name: data.file_name,
@@ -1043,10 +1048,12 @@ function App() {
 
   const handleSendImageToChat = () => {
     if (!generatedImageResult) return;
+    const dossier = generatedImageResult.research_dossier || {};
+    const compsList = (dossier.components || []).slice(0, 4).map(c => `- **${c.name}** (\`${c.symbol || 'Part'}\`): ${c.spec}`).join('\n');
     const botMsg = {
       role: 'ai',
-      content: `### AI Generated Engineering Visual\n\n**Prompt:** *${generatedImageResult.prompt}*\n\n**Visual Style:** ${generatedImageResult.style?.toUpperCase() || 'SCHEMATIC'} • **Discipline:** ${activeDiscipline.name}`,
-      model_used: 'AI Image Studio',
+      content: `### AI Researched Engineering Schematic\n\n**Visual Title:** *${dossier.title || generatedImageResult.prompt}*\n\n🧠 **Research Brain:** ${generatedImageResult.researched_by || 'AI Model'} • 📜 **Standard:** \`${generatedImageResult.standard_cited || 'IEEE/ASME'}\`\n\n${compsList ? `**Key Researched Components:**\n${compsList}\n\n` : ''}*Generated natively by EngiBot Engineering Visual Engine.*`,
+      model_used: `AI Visual (${generatedImageResult.researched_by || 'Engine'})`,
       attachment_url: generatedImageResult.image_url,
       attachment_type: 'image',
       file_name: generatedImageResult.file_name,
@@ -5863,6 +5870,37 @@ function App() {
               />
             </div>
 
+            {/* AI Research Brain (Model Selector) */}
+            <div style={{ marginTop: '0.85rem', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                  🧠 AI Research Brain (Topic & Standards Analysis)
+                </label>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  Chooses best of your 4 models
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'auto', label: '⚡ Auto (Optimal)', desc: 'Automatically selects best model for branch' },
+                  { id: 'groq', label: '⚡ Groq 120B Flagship', desc: '120B ultra-fast technical reasoning' },
+                  { id: 'qwen', label: '🧠 Qwen 27B Reasoning', desc: 'Mathematical & logic derivations' },
+                  { id: 'nemotron', label: '🌐 Nemotron 3.5 Cloud', desc: 'High-throughput cloud architecture' },
+                ].map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`aspect-pill ${imageResearchModel === m.id ? 'active' : ''}`}
+                    onClick={() => setImageResearchModel(m.id)}
+                    title={m.desc}
+                    style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Visual Style Selection */}
             <div style={{ marginTop: '0.85rem', textAlign: 'left' }}>
               <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
@@ -5938,12 +5976,12 @@ function App() {
                 {isGeneratingImage ? (
                   <>
                     <RefreshCw size={15} className="spinner" />
-                    <span>Rendering Visual...</span>
+                    <span>Researching & Rendering...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles size={15} />
-                    <span>Generate Visual</span>
+                    <span>Research & Generate Visual</span>
                   </>
                 )}
               </button>
@@ -5952,21 +5990,47 @@ function App() {
             {/* Generated Image Result Display */}
             {generatedImageResult && (
               <div className="generated-image-result-box">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Generated Output ({generatedImageResult.file_size ? formatFileSize(generatedImageResult.file_size) : ''})
-                  </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                {/* Meta Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px', marginBottom: '10px', textAlign: 'left' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span className="user-profile-branch-badge locked" style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600 }}>
+                        🧠 {generatedImageResult.researched_by || 'AI Research Brain'}
+                      </span>
+                      {generatedImageResult.standard_cited && (
+                        <span className="calc-standard-chip" style={{ fontSize: '0.72rem', padding: '3px 8px' }}>
+                          📜 {generatedImageResult.standard_cited}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+                      {generatedImageResult.file_size ? formatFileSize(generatedImageResult.file_size) : ''}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <a 
                       href={resolveAttachmentUrl(generatedImageResult.image_url)} 
-                      download={generatedImageResult.file_name || 'engineering-diagram.jpg'} 
+                      download={generatedImageResult.file_name || 'engineering-diagram.png'} 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="image-chip-btn"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', background: '#3b82f6', color: '#ffffff', borderColor: '#3b82f6' }}
                     >
-                      <Download size={12} /> Download
+                      <Download size={12} /> Download PNG
                     </a>
+                    {generatedImageResult.svg_url && (
+                      <a 
+                        href={resolveAttachmentUrl(generatedImageResult.svg_url)} 
+                        download={generatedImageResult.file_name?.replace('.png', '.svg') || 'engineering-diagram.svg'} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="image-chip-btn"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', background: '#0284c7', color: '#ffffff', borderColor: '#0284c7' }}
+                      >
+                        <Download size={12} /> Vector SVG
+                      </a>
+                    )}
                     <button 
                       type="button" 
                       className="image-chip-btn"
@@ -5978,6 +6042,7 @@ function App() {
                   </div>
                 </div>
 
+                {/* Visual Preview */}
                 <div 
                   className="generated-image-preview-wrap"
                   onClick={() => window.open(resolveAttachmentUrl(generatedImageResult.image_url), '_blank')}
@@ -5989,6 +6054,60 @@ function App() {
                     className="generated-image-preview" 
                   />
                 </div>
+
+                {/* Researched Specifications Dossier */}
+                {generatedImageResult.research_dossier && (
+                  <div style={{ marginTop: '12px', textAlign: 'left', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px' }}>
+                    <div 
+                      onClick={() => setShowResearchDossier(!showResearchDossier)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <strong style={{ fontSize: '0.84rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        📊 Research Dossier: {generatedImageResult.research_dossier.title || 'Technical Specifications'}
+                      </strong>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                        {showResearchDossier ? 'Hide Details ▲' : 'Show Details ▼'}
+                      </span>
+                    </div>
+
+                    {showResearchDossier && (
+                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                        {/* Researched Components */}
+                        {generatedImageResult.research_dossier.components?.length > 0 && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase' }}>Researched Components & Specifications:</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '6px', marginTop: '4px' }}>
+                              {generatedImageResult.research_dossier.components.map((c, i) => (
+                                <div key={i} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 8px', fontSize: '0.74rem' }}>
+                                  <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                                    <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '1px 5px', borderRadius: 4, marginRight: '4px', fontSize: '0.68rem' }}>{c.symbol || `P${i+1}`}</span>
+                                    {c.name}
+                                  </div>
+                                  <div style={{ color: '#64748b', marginTop: '2px', fontSize: '0.7rem' }}>{c.spec}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Researched Stages */}
+                        {generatedImageResult.research_dossier.stages?.length > 0 && (
+                          <div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase' }}>System Interconnection Stages:</span>
+                            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginTop: '4px', paddingBottom: '4px' }}>
+                              {generatedImageResult.research_dossier.stages.map((st, i) => (
+                                <div key={i} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '6px 8px', minWidth: '130px', flex: 1, fontSize: '0.72rem' }}>
+                                  <strong style={{ color: '#166534', display: 'block' }}>Stage {i+1}: {st.name}</strong>
+                                  <span style={{ color: '#15803d', fontSize: '0.68rem' }}>{st.desc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

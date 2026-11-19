@@ -440,8 +440,9 @@ class ImageGenerateRequest(BaseModel):
     prompt: str
     style: Optional[str] = "schematic"
     discipline: Optional[str] = "general"
-    width: Optional[int] = 768
-    height: Optional[int] = 768
+    width: Optional[int] = 1400
+    height: Optional[int] = 900
+    research_model: Optional[str] = "auto"
     conversation_id: Optional[int] = None
     user_id: Optional[int] = None
 
@@ -1446,14 +1447,19 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             img_res = generate_image_file(
                 prompt=clean_img_prompt,
                 style="schematic",
-                discipline=request.discipline or "general"
+                discipline=request.discipline or "general",
+                preferred_model=request.model_provider
             )
             if img_res.get("success"):
                 ai_attachment_url = img_res["image_url"]
                 ai_attachment_type = "image"
                 ai_file_name = img_res["file_name"]
                 ai_file_size = img_res["file_size"]
-                augmented_prompt += f"\n\n[SYSTEM NOTICE: An engineering image/diagram '{img_res['file_name']}' has been generated for prompt '{clean_img_prompt}'. Please provide a structured technical breakdown and explanation of this schematic/concept.]"
+                augmented_prompt += (
+                    f"\n\n[SYSTEM NOTICE: An engineering schematic '{img_res['file_name']}' has been researched by {img_res.get('researched_by', 'AI Engine')} "
+                    f"under standard '{img_res.get('standard_cited', 'IEEE/ASME')}' and rendered for '{clean_img_prompt}'. "
+                    f"Please provide a comprehensive technical breakdown of this schematic, including component ratings, operating principles, and standard citations.]"
+                )
 
         ai_text, model_used = generate_ai_response(
             system_instruction=effective_system_instruction,
@@ -1500,13 +1506,14 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/image/generate")
 def api_generate_image(req: ImageGenerateRequest, db: Session = Depends(get_db)):
-    """Dedicated API endpoint to generate high-resolution AI engineering diagrams and schematics."""
+    """Dedicated API endpoint to research and generate high-resolution AI engineering diagrams."""
     result = generate_image_file(
         prompt=req.prompt,
         style=req.style or "schematic",
         discipline=req.discipline or "general",
-        width=req.width or 768,
-        height=req.height or 768
+        width=req.width or 1400,
+        height=req.height or 900,
+        preferred_model=req.research_model
     )
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Image generation failed"))
@@ -1515,11 +1522,18 @@ def api_generate_image(req: ImageGenerateRequest, db: Session = Depends(get_db))
     if req.conversation_id:
         conv = db.query(Conversation).filter(Conversation.id == req.conversation_id).first()
         if conv:
+            researched_by = result.get("researched_by", "AI Engine")
+            standard = result.get("standard_cited", "IEEE/ASME Standard")
+            dossier = result.get("research_dossier", {})
+            components_list = dossier.get("components", [])
+            comps_summary = "\n".join([f"- **{c.get('name')}** (`{c.get('symbol', 'Part')}`): {c.get('spec')}" for c in components_list[:4]])
+
             summary = (
-                f"### AI Generated Engineering Visual\n\n"
-                f"**Prompt:** *{req.prompt}*\n\n"
-                f"**Style:** {req.style.title() if req.style else 'Schematic'} • **Discipline:** {req.discipline.upper() if req.discipline else 'General'}\n\n"
-                f"The diagram above illustrates the key components, layout, and structural specifications generated according to your prompt."
+                f"### AI Researched Engineering Schematic\n\n"
+                f"**Visual Title:** *{dossier.get('title', req.prompt)}*\n\n"
+                f"🧠 **Research Brain:** {researched_by} • 📜 **Standard:** `{standard}`\n\n"
+                f"**Researched Components & Specifications:**\n{comps_summary}\n\n"
+                f"*Generated natively by EngiBot Engineering Visual Engine.*"
             )
             msg = ChatMessage(
                 user_id=req.user_id or conv.user_id,
@@ -1531,7 +1545,7 @@ def api_generate_image(req: ImageGenerateRequest, db: Session = Depends(get_db))
                 attachment_type="image",
                 file_name=result["file_name"],
                 file_size=result["file_size"],
-                model="AI Image Studio"
+                model=f"AI Visual ({researched_by})"
             )
             db.add(msg)
             conv.updated_at = datetime.utcnow()
