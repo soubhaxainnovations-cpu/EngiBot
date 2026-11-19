@@ -5957,10 +5957,10 @@ function App() {
             )}
 
             {/* Action Buttons */}
-            <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div className="image-modal-footer">
               <button 
                 type="button" 
-                className="calc-btn secondary"
+                className="image-modal-cancel-btn"
                 onClick={() => setShowImageModal(false)}
                 disabled={isGeneratingImage}
               >
@@ -5968,19 +5968,18 @@ function App() {
               </button>
               <button 
                 type="button" 
-                className="calc-btn primary"
+                className="image-modal-generate-btn"
                 onClick={() => handleGenerateImage()}
                 disabled={isGeneratingImage || !imagePrompt.trim()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
               >
                 {isGeneratingImage ? (
                   <>
-                    <RefreshCw size={15} className="spinner" />
+                    <RefreshCw size={16} className="spinner" />
                     <span>Researching & Rendering...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles size={15} />
+                    <Sparkles size={16} />
                     <span>Research & Generate Visual</span>
                   </>
                 )}
