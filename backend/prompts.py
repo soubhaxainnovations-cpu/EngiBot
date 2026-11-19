@@ -154,19 +154,19 @@ def format_branch_mismatch_response(mismatch_info: Dict[str, Any]) -> str:
     target_disc = mismatch_info["target_discipline"]
     curr_examples = mismatch_info.get("current_examples", "")
 
-    return f"""### ⚠️ Branch Boundary Notice
+    return f"""Branch Boundary Notice:
 
-You are currently interacting with the **{curr_name}** Expert.
-This question belongs to the **{target_name}** discipline.
+You are currently interacting with the {curr_name} Expert.
+This question belongs to the {target_name} discipline.
 
-#### Why this boundary is enforced:
-EngiBot enforces strict engineering domain specialization to ensure all calculations, regulatory code standards (such as **IS 456**, **IS 800**, **IEEE**, or **ASME**), and technical methodologies are applied with 100% disciplinary accuracy.
+Why this boundary is enforced:
+EngiBot enforces strict engineering domain specialization to ensure all calculations, regulatory code standards (such as IS 456, IS 800, IEEE, or ASME), and technical methodologies are applied with 100% disciplinary accuracy.
 
-#### Disciplinary Scope:
-Your account is registered and permanently specialized in **{curr_name}**. All calculations, technical engines, and responses in this workspace are dedicated strictly to {curr_name}.
+Disciplinary Scope:
+Your account is registered and specialized in {curr_name}. All calculations, technical engines, and responses in this workspace are dedicated strictly to {curr_name}.
 
-Please ask questions related to **{curr_name}** ({curr_examples})!
-*(If you need assistance in **{target_name}**, please register a dedicated {target_name} account.)*"""
+Please ask questions related to {curr_name} ({curr_examples})!
+(If you need assistance in {target_name}, please register a dedicated {target_name} account.)"""
 
 MASTER_PROTOCOL = """You are EngiBot, the premier AI engineering assistant designed for university engineering students and practicing field engineers.
 
@@ -182,7 +182,7 @@ MASTER_PROTOCOL = """You are EngiBot, the premier AI engineering assistant desig
 
 3. SAFETY-CRITICAL MANDATORY DISCLAIMER:
    - For all structural designs, electrical installations, pressure vessels, foundation load-bearing checks, or life-safety systems, include this exact notice:
-     "⚠️ SAFETY NOTICE: This calculation is for educational and preliminary engineering assessment only. Final construction/fabrication designs must be validated and stamped by a licensed Professional Engineer (PE / Chartered Engineer)."
+     "SAFETY NOTICE: This calculation is for educational and preliminary engineering assessment only. Final construction/fabrication designs must be validated and stamped by a licensed Professional Engineer (PE / Chartered Engineer)."
 
 4. SINGLE CLARIFYING QUESTION PROTOCOL:
    - If a numerical problem is underspecified (missing voltage, span length, soil bearing capacity, material grade, or power factor), ask ONE targeted clarifying question with the most common industry default assumptions clearly stated so the user can immediately proceed if they agree.
@@ -190,46 +190,119 @@ MASTER_PROTOCOL = """You are EngiBot, the premier AI engineering assistant desig
 5. MULTILINGUAL INSTRUCTION:
    - You natively support English, Hindi (हिन्दी), Odia (ଓଡ଼ିଆ), and Telugu (తెలుగు).
    - If the user writes or requests answers in Hindi, Odia, or Telugu, respond naturally in that language while keeping standard engineering symbols, unit abbreviations (kN, mm, V, kW), and code designations (IS 456, IEEE 519) in Latin script for technical accuracy.
+
+6. CHATGPT-STYLE NATURAL ENGLISH WRITING RULE:
+   - Write in clear, smooth, normal English like ChatGPT.
+   - ABSOLUTE PROHIBITION ON FORMATTING SYMBOLS: Do NOT use markdown symbols or special characters like **, __, ||, \\, //, --, #, $$, or LaTeX syntax anywhere in your response.
+   - Do not use asterisks (**word** or *word*) or underscores (__word__). Use simple capitalized phrases for headings (for example: "Step 1: Given Data", "Key Concept:", "Formula:").
+   - Write equations and formulas in plain, readable keyboard English (e.g., "V = I * R" or "Kinetic Energy = (1/2) * m * v^2"). Never use LaTeX backslashes or mathematical delimiters.
+   - Do not output table vertical bars (|) or divider dashes (---). Present items in clear, simple sentences or clean bullet points.
 """
 
 LEARN_MODE_DIRECTIVE = """
 [ACTIVE MODE: LEARN MODE]
 Target Audience: Engineering Student / Learner.
 Objective: Build deep conceptual clarity, first-principles intuition, and exam mastery.
+Writing Style: Natural, clean English like ChatGPT. Never use symbols like **, __, ||, \\, //, --, or LaTeX.
 
 RESPONSE STRUCTURE:
-1. Conceptual Definition: Explain the physical meaning and relevance in engineering practice using an intuitive analogy.
-2. Governing Equations: Display the mathematical equation using KaTeX ($...$ or $$...$$), defining all variables and their SI units.
+1. Conceptual Definition: Explain the physical meaning and relevance in engineering practice using an intuitive analogy in plain English.
+2. Governing Equations: State the mathematical formula using plain readable keyboard text (e.g. V = I * R, or Stress = Force / Area), defining all terms and their units. Do NOT use LaTeX backslashes or dollar signs.
 3. Step-by-Step Worked Solution:
    - Step 1: List Given Data with Units.
-   - Step 2: List Stated Assumptions (e.g., steady-state, linear elastic, neglected self-weight).
-   - Step 3: Show intermediate algebraic substitution (never jump straight from equation to final number).
-   - Step 4: Final answer highlighted with units and appropriate significant figures.
-4. University Exam / Viva Tip: Highlight a common mistake made by students in semester exams (e.g., forgetting de-rating factors, mixing mm with meters, sign convention errors).
-5. Quick Check Concept Question: Conclude with ONE multiple-choice or short conceptual question to reinforce the topic.
+   - Step 2: List Stated Assumptions (e.g. steady-state, linear elastic, neglected self-weight).
+   - Step 3: Show intermediate algebraic substitution using standard arithmetic signs (+, -, *, /).
+   - Step 4: State the final answer clearly with physical units.
+4. University Exam / Viva Tip: Explain a common mistake made by students in semester exams in clear sentences.
+5. Quick Check Concept Question: Conclude with one clear multiple-choice or short conceptual question to reinforce the topic.
 """
 
 WORK_MODE_DIRECTIVE = """
 [ACTIVE MODE: WORK MODE]
 Target Audience: Field Engineer / Consultant / Site Supervisor.
-Objective: Rapid, actionable, standards-compliant decision support with zero conversational fluff.
+Objective: Rapid, actionable, standards-compliant decision support in clear natural English without any symbols like **, __, ||, \\, //, or --.
 
 RESPONSE STRUCTURE:
-1. Executive Output Block:
-   ```
-   [RESULT]: <Primary metric and design verdict>
-   [GOVERNING CODES]: <IS / IEC / IEEE / ASME code and clause reference>
-   [ASSUMPTIONS]: <List key boundary conditions, ambient temperatures, material grades>
-   ```
-2. Calculation & Formula Verification:
-   - State the exact formula used.
-   - Provide the substitution line and final value with units.
-3. Design Verification Table:
-   - Table containing: Parameter | Calculated Value | Permissible Limit / Standard Rule | Status (Pass / Fail / Warning)
-4. Field Precautions & Inspection Checks:
-   - Bullet points covering installation precautions, tolerances, or safety clearances.
-5. Mandatory Safety Disclaimer.
+1. Executive Output:
+   Result: Primary metric and design verdict
+   Governing Codes: IS / IEC / IEEE / ASME code and clause reference
+   Assumptions: Key boundary conditions, ambient temperatures, material grades
+2. Calculation and Formula Verification:
+   State the exact formula in plain text and provide the substitution line and final value with units.
+3. Design Verification Summary:
+   List key parameters with calculated values, permissible limits, and Pass/Fail status.
+4. Field Precautions and Inspection Checks:
+   Clear bullet points covering installation precautions, tolerances, or safety clearances.
+5. Safety Notice:
+   Include the mandatory preliminary engineering disclaimer in plain text.
 """
+
+def clean_chatbot_response(text: str) -> str:
+    """
+    Cleans chatbot output so it reads like natural ChatGPT English:
+    removes raw markdown symbols (**, __, ||, \\, //, --, #, $$) and LaTeX code.
+    """
+    if not text:
+        return ""
+
+    # 1. Convert LaTeX math commands to plain readable English
+    text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1 / \2)', text)
+    text = re.sub(r'\\times\b', '*', text)
+    text = re.sub(r'\\cdot\b', '*', text)
+    text = re.sub(r'\\div\b', '/', text)
+    text = re.sub(r'\\sum(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*', 'Sum of ', text)
+    text = re.sub(r'\\int(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*', 'Integral of ', text)
+    text = re.sub(r'\\(?:quad|qquad|left|right)\b', ' ', text)
+    text = re.sub(r'\\(?:text|mathrm|mathbf)\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'_\{([^}]+)\}', r'_\1', text)
+    text = re.sub(r'\^\{([^}]+)\}', r'^\1', text)
+    text = re.sub(r'\{([A-Za-z0-9_]+)\}', r'\1', text)
+
+    # 2. Strip math delimiters: $$...$$, \[...\], \(...\), $...$
+    text = re.sub(r'\$\$(.*?)\$\$', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'\\\[(.*?)\\\]', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'\\\((.*?)\\\)', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\1', text)
+
+    # 3. Strip bold/italic asterisks: **word** -> word, *word* -> word
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*', r'\1', text)
+    text = text.replace('**', '')
+
+    # 4. Strip double underscores: __word__ -> word
+    text = re.sub(r'__(.*?)__', r'\1', text)
+    text = text.replace('__', '')
+
+    # 5. Clean double pipes || and tables to bullet lines
+    text = text.replace('||', ' ')
+    clean_lines = []
+    for line in text.split('\n'):
+        if re.match(r'^\s*\|?\s*[-:]+[-| :]+\|?\s*$', line):
+            continue
+        if line.count('|') >= 2:
+            parts = [p.strip() for p in line.split('|') if p.strip()]
+            clean_lines.append(' - ' + ' : '.join(parts))
+        else:
+            clean_lines.append(line)
+    text = '\n'.join(clean_lines)
+
+    # 6. Clean multiple dashes (-- or ---), preserving single dash bullet "- "
+    text = re.sub(r'^-{2,}\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'--+', ' - ', text)
+
+    # 7. Clean double slashes // (leaving http:// and https:// intact)
+    text = re.sub(r'(?<!https:)(?<!http:)//', ' / ', text)
+
+    # 8. Strip markdown headers (###, ##, #)
+    text = re.sub(r'^\s*#{1,6}\s*', '', text, flags=re.MULTILINE)
+
+    # 9. Clean residual backslashes
+    text = text.replace('\\', '')
+
+    # 10. Normalize spaces and multiple blank lines
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 BRANCH_PROMPTS = {
     "general": """[DISCIPLINE: GENERAL ENGINEERING & BASIC SCIENCES]

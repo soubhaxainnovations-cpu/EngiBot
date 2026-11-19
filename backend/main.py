@@ -21,7 +21,7 @@ import struct
 from dotenv import load_dotenv
 
 from mailer import send_otp_email
-from prompts import build_system_prompt, detect_branch_mismatch, format_branch_mismatch_response, DISCIPLINE_METADATA
+from prompts import build_system_prompt, detect_branch_mismatch, format_branch_mismatch_response, DISCIPLINE_METADATA, clean_chatbot_response
 import calculators
 from image_generator import generate_image_file, research_engineering_topic
 
@@ -1641,6 +1641,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             custom_provider=request.custom_provider,
             return_model=True
         )
+        ai_text = clean_chatbot_response(ai_text)
 
         ai_msg = ChatMessage(
             user_id=request.user_id,

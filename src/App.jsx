@@ -19,6 +19,37 @@ const formatFileSize = (bytes) => {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+const cleanDisplayMessage = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1 / $2)')
+    .replace(/\\times/g, '*')
+    .replace(/\\cdot/g, '*')
+    .replace(/\\div/g, '/')
+    .replace(/\\sum(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*/g, 'Sum of ')
+    .replace(/\\int(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*/g, 'Integral of ')
+    .replace(/\\(?:quad|qquad|left|right)\b/g, ' ')
+    .replace(/\\(?:text|mathrm|mathbf)\{([^}]+)\}/g, '$1')
+    .replace(/_\{([^}]+)\}/g, '_$1')
+    .replace(/\^\{([^}]+)\}/g, '^$1')
+    .replace(/\{([A-Za-z0-9_]+)\}/g, '$1')
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\\\[([\s\S]*?)\\\]/g, '$1')
+    .replace(/\\\(([\s\S]*?)\\\)/g, '$1')
+    .replace(/(?<!\$)\$(?!\$)(.*?)\$/g, '$1')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/(?<!\*)\*(?!\*)(.*?)\*/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/__/g, '')
+    .replace(/\|\|/g, ' ')
+    .replace(/^-{2,}\s*$/gm, '')
+    .replace(/--+/g, ' - ')
+    .replace(/(?<!https:)(?<!http:)\/\//g, ' / ')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\\/g, '')
+}
+
 const MODEL_OPTIONS = [
   {
     id: 'auto',
@@ -5181,7 +5212,7 @@ function App() {
                   {/* Message text */}
                   {msg.content && (
                     <div className="message-text">
-                      {(msg.content || '').split('\n').map((line, i) => (
+                      {cleanDisplayMessage(msg.content).split('\n').map((line, i) => (
                         <span key={i}>
                           {line}
                           <br />
