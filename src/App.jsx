@@ -7,7 +7,8 @@ import {
   Paperclip, Mic, MicOff, Volume2, VolumeX, FileText, Image, Video, Download,
   BookOpen, Briefcase, Calculator, GraduationCap, FileCheck, Award,
   Shield, BarChart3, Users, Search, Power, Clock, TrendingUp, Lock,
-  SlidersHorizontal, CreditCard, Server, QrCode, Copy
+  SlidersHorizontal, CreditCard, Server, QrCode, Copy,
+  Eye, EyeOff
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import './App.css'
@@ -21,60 +22,103 @@ const formatFileSize = (bytes) => {
 
 const MODEL_OPTIONS = [
   {
+    id: 'auto',
+    name: 'Auto (Smart Route)',
+    shortName: 'Auto Route',
+    subtitle: 'Intelligent multi-model cascade',
+    icon: Sparkles,
+    color: '#a855f7',
+    badge: '✨ Recommended',
+    badgeClass: 'badge-auto',
+    description: 'Auto-detects problem type. Routes calculations to Groq 120B and deep proofs to Qwen 27B / Nemotron.'
+  },
+  {
     id: 'groq',
-    name: 'Groq 120B',
+    name: 'Groq 120B Flagship',
     shortName: 'Groq 120B',
     subtitle: 'Flagship • openai/gpt-oss-120b',
     icon: Zap,
     color: '#f59e0b',
     badge: '⚡ 120B Ultra-Fast',
     badgeClass: 'badge-groq',
-    description: '120-Billion parameter engine. Sub-second speed, best for calculations, formulas & code.'
+    description: '120-Billion parameter engine. Sub-second speed, best for rapid calculations, formulas & code.'
   },
   {
-    id: 'deepseek',
-    name: 'DeepSeek R1',
-    shortName: 'DeepSeek R1',
-    subtitle: 'OpenRouter • Deep Reasoning',
+    id: 'qwen',
+    name: 'Qwen 27B Deep Reasoning',
+    shortName: 'Qwen 27B',
+    subtitle: 'Groq Engine • qwen/qwen3.8-27b',
+    icon: Cpu,
+    color: '#ec4899',
+    badge: '🧠 Deep Math & Logic',
+    badgeClass: 'badge-qwen',
+    description: 'Specialized mathematical, algorithmic, and engineering structural derivation model.'
+  },
+  {
+    id: 'nemotron-omni',
+    name: 'Nemotron 30B Omni Reasoning',
+    shortName: 'Nemotron 30B',
+    subtitle: 'OpenRouter • Chain-of-Thought',
     icon: Cpu,
     color: '#06b6d4',
-    badge: '🧠 Deep Reasoning',
-    badgeClass: 'badge-deepseek',
-    description: 'Chain-of-thought mathematical and engineering reasoning model powered by OpenRouter multi-key pool.'
+    badge: '🔬 Step-by-Step Logic',
+    badgeClass: 'badge-omni',
+    description: 'Active free chain-of-thought logic engine. Great for circuit theory, proofs & analysis.'
   },
   {
-    id: 'llama',
-    name: 'Llama 3.3 70B',
-    shortName: 'Llama 3.3',
-    subtitle: 'OpenRouter • Meta 70B',
+    id: 'nemotron-ultra',
+    name: 'Nemotron 550B Ultra',
+    shortName: 'Nemotron 550B',
+    subtitle: 'OpenRouter • 550-Billion Scale',
     icon: Bot,
-    color: '#38bdf8',
-    badge: '⚡ 70B Intelligence',
-    badgeClass: 'badge-llama',
-    description: 'Meta premier 70-Billion open-weights model for comprehensive engineering explanations & theory.'
+    color: '#10b981',
+    badge: '🏛️ 550B Flagship',
+    badgeClass: 'badge-ultra',
+    description: 'Massive 550-Billion parameter open-weights model for comprehensive engineering textbooks & systems.'
+  },
+  {
+    id: 'cohere-code',
+    name: 'Cohere Mini Code',
+    shortName: 'Cohere Code',
+    subtitle: 'OpenRouter • Code & Syntax',
+    icon: FileText,
+    color: '#8b5cf6',
+    badge: '💻 Algorithms & Code',
+    badgeClass: 'badge-cohere',
+    description: 'Optimized for Python, C++, Java, MATLAB, Verilog, SQL, and algorithm design.'
   },
   {
     id: 'openrouter',
-    name: 'OpenRouter Cloud',
-    shortName: 'OpenRouter',
-    subtitle: 'Free Cloud • Nemotron 3.5',
+    name: 'Nemotron 3.5 Cloud',
+    shortName: 'Nemotron 3.5',
+    subtitle: 'OpenRouter • Cloud Throughput',
     icon: Globe,
     color: '#3b82f6',
-    badge: '🌐 Multi-Key Cloud',
+    badge: '🌐 Cloud Throughput',
     badgeClass: 'badge-openrouter',
-    description: 'Multi-key pooled cloud backup. Great for conceptual explanations, syllabus Q&A & theory.'
+    description: 'High-throughput cloud backup. Great for conceptual explanations & syllabus Q&A.'
   },
   {
-    id: 'auto',
-    name: 'Auto (Smart Route)',
-    shortName: 'Auto Route',
-    subtitle: 'Smart cascade with failover',
-    icon: Sparkles,
-    color: '#a855f7',
-    badge: '✨ Recommended',
-    badgeClass: 'badge-auto',
-    description: 'Queries Groq 120B first, auto-fails over to DeepSeek R1 & OpenRouter multi-key pool if rate-limited.'
+    id: 'custom',
+    name: 'Custom AI Model',
+    shortName: 'Custom Model',
+    subtitle: 'User Slug & API Key',
+    icon: SlidersHorizontal,
+    color: '#ea580c',
+    badge: '⚙️ Fully Customizable',
+    badgeClass: 'badge-custom',
+    description: 'Choose ANY model slug (DeepSeek R1, Llama 3.3, Claude 3.5, Gemini 2.0, GPT-4o) and your own API key.'
   }
+]
+
+const CUSTOM_PRESETS = [
+  { label: 'DeepSeek R1', slug: 'deepseek/deepseek-r1', provider: 'openrouter', desc: 'Paid on OpenRouter (requires API key with credits)' },
+  { label: 'Llama 3.3 70B', slug: 'meta-llama/llama-3.3-70b-instruct', provider: 'openrouter', desc: 'Paid on OpenRouter (requires API key with credits)' },
+  { label: 'Gemini 2.0 Flash', slug: 'google/gemini-2.0-flash-001', provider: 'openrouter', desc: 'Fast & multimodal reasoning' },
+  { label: 'Claude 3.5 Sonnet', slug: 'anthropic/claude-3.5-sonnet', provider: 'openrouter', desc: 'Elite engineering synthesis & coding' },
+  { label: 'GPT-4o', slug: 'openai/gpt-4o', provider: 'openrouter', desc: 'OpenAI Flagship' },
+  { label: 'Qwen 2.5 Coder 32B', slug: 'qwen/qwen-2.5-coder-32b-instruct', provider: 'openrouter', desc: 'Specialized code & algorithm model' },
+  { label: 'Llama 3.1 8B Instant', slug: 'llama-3.1-8b-instant', provider: 'groq', desc: 'Groq ultra-fast sub-second latency' }
 ]
 
 const DISCIPLINES = [
@@ -136,7 +180,7 @@ function App() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  // Claude-Style Interactive Model Selection State
+  // Interactive Model Selection & Custom AI Model State
   const [selectedModel, setSelectedModel] = useState(() => {
     try {
       return localStorage.getItem('engibot_selected_model') || 'auto'
@@ -144,6 +188,29 @@ function App() {
       return 'auto'
     }
   })
+  const [customModelId, setCustomModelId] = useState(() => {
+    try {
+      return localStorage.getItem('engibot_custom_model_id') || 'deepseek/deepseek-r1'
+    } catch {
+      return 'deepseek/deepseek-r1'
+    }
+  })
+  const [customApiKey, setCustomApiKey] = useState(() => {
+    try {
+      return localStorage.getItem('engibot_custom_api_key') || ''
+    } catch {
+      return ''
+    }
+  })
+  const [customProvider, setCustomProvider] = useState(() => {
+    try {
+      return localStorage.getItem('engibot_custom_provider') || 'openrouter'
+    } catch {
+      return 'openrouter'
+    }
+  })
+  const [isCustomModelModalOpen, setIsCustomModelModalOpen] = useState(false)
+  const [showCustomApiKey, setShowCustomApiKey] = useState(false)
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const modelDropdownRef = useRef(null)
 
@@ -158,6 +225,15 @@ function App() {
   }, [])
 
   const handleSelectModel = (modelId) => {
+    if (modelId === 'custom') {
+      setSelectedModel('custom')
+      try {
+        localStorage.setItem('engibot_selected_model', 'custom')
+      } catch {}
+      setIsModelDropdownOpen(false)
+      setIsCustomModelModalOpen(true)
+      return
+    }
     setSelectedModel(modelId)
     try {
       localStorage.setItem('engibot_selected_model', modelId)
@@ -165,7 +241,10 @@ function App() {
     setIsModelDropdownOpen(false)
   }
 
-  const currentModelConfig = MODEL_OPTIONS.find(m => m.id === selectedModel) || MODEL_OPTIONS[2]
+  const currentModelConfig = MODEL_OPTIONS.find(m => m.id === selectedModel) || MODEL_OPTIONS[0]
+  const currentModelDisplayName = selectedModel === 'custom' && customModelId
+    ? (customModelId.includes('/') ? customModelId.split('/')[1] : customModelId)
+    : currentModelConfig.shortName
   const CurrentModelIcon = currentModelConfig.icon
   
   // ChatGPT-style Conversation History state
@@ -832,6 +911,47 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // Select and load a conversation session
+  const handleSelectConversation = async (conv) => {
+    if (!conv) return;
+    setCurrentConversationId(conv.id);
+    const matched = DISCIPLINES.find(d => d.id === conv.discipline) || DISCIPLINES[0];
+    setActiveDiscipline(matched);
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/conversations/${conv.id}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+      }
+    } catch (err) {
+      console.error("Failed to load conversation messages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchUserProfile = async (userId) => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/user/profile/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.preferred_mode) {
+          setActiveMode(data.preferred_mode);
+          try { localStorage.setItem('engibot_mode', data.preferred_mode); } catch {}
+        }
+        if (data.discipline) {
+          const matchedBranch = DISCIPLINES.find(d => d.id === data.discipline);
+          if (matchedBranch) setActiveDiscipline(matchedBranch);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load user profile:", e);
+    }
+  };
+
   // Load user conversation list
   const fetchConversations = async (autoSelectFirst = false) => {
     if (!user) return;
@@ -855,26 +975,6 @@ function App() {
       fetchUserProfile(user.id);
     }
   }, [user]);
-
-  const fetchUserProfile = async (userId) => {
-    if (!userId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/user/profile/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.preferred_mode) {
-          setActiveMode(data.preferred_mode);
-          try { localStorage.setItem('engibot_mode', data.preferred_mode); } catch {}
-        }
-        if (data.discipline) {
-          const matchedBranch = DISCIPLINES.find(d => d.id === data.discipline);
-          if (matchedBranch) setActiveDiscipline(matchedBranch);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load user profile:", e);
-    }
-  };
 
   const handleRunCalculator = async (type = calcTab) => {
     setCalcLoading(true);
@@ -1110,27 +1210,6 @@ function App() {
       }
     } catch (e) {
       alert(`Failed to escalate doubt: ${e.message}`);
-    }
-  };
-
-  // Select and load a conversation session
-  const handleSelectConversation = async (conv) => {
-    if (!conv) return;
-    setCurrentConversationId(conv.id);
-    const matched = DISCIPLINES.find(d => d.id === conv.discipline) || DISCIPLINES[0];
-    setActiveDiscipline(matched);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch(`${API_BASE}/api/conversations/${conv.id}/messages`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages || []);
-      }
-    } catch (err) {
-      console.error("Failed to load conversation messages:", err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -2080,7 +2159,10 @@ function App() {
           file_name: fileName,
           file_size: fileSize,
           file_text: fileText,
-          model_provider: selectedModel
+          model_provider: selectedModel,
+          custom_model_id: selectedModel === 'custom' ? customModelId : (customModelId || undefined),
+          custom_api_key: customApiKey || undefined,
+          custom_provider: customProvider || undefined
         })
       });
       
@@ -5028,7 +5110,7 @@ function App() {
                 <span className="model-btn-icon" style={{ color: currentModelConfig.color }}>
                   <CurrentModelIcon size={14} />
                 </span>
-                <span className="model-btn-name">{currentModelConfig.shortName}</span>
+                <span className="model-btn-name">{currentModelDisplayName}</span>
                 <ChevronDown size={13} className={`chevron-icon ${isModelDropdownOpen ? 'rotate' : ''}`} />
               </button>
 
@@ -5036,7 +5118,7 @@ function App() {
                 <div className="model-dropdown-menu glass-panel">
                   <div className="model-dropdown-header">
                     <span>Select AI Model</span>
-                    <span className="model-count-tag">{MODEL_OPTIONS.length - 1} Models Active</span>
+                    <span className="model-count-tag">{MODEL_OPTIONS.length - 1} Models Available</span>
                   </div>
 
                   <div className="model-options-list">
@@ -5068,6 +5150,20 @@ function App() {
                         </div>
                       );
                     })}
+                  </div>
+
+                  <div className="model-dropdown-footer">
+                    <button 
+                      type="button" 
+                      className="configure-custom-btn"
+                      onClick={() => {
+                        setIsModelDropdownOpen(false);
+                        setIsCustomModelModalOpen(true);
+                      }}
+                    >
+                      <SlidersHorizontal size={14} />
+                      <span>Configure Custom Model & API Key</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -6137,6 +6233,170 @@ function App() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Custom AI Model Studio Modal */}
+      {isCustomModelModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsCustomModelModalOpen(false)}>
+          <div className="modal-content custom-model-dialog" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setIsCustomModelModalOpen(false)}>
+              <X size={20} />
+            </button>
+
+            <div className="custom-model-header">
+              <div className="custom-model-icon-wrap">
+                <SlidersHorizontal size={22} />
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <h3 className="custom-model-title">Custom AI Model Studio</h3>
+                <p className="custom-model-sub">
+                  Select or enter any AI model from OpenRouter (200+ models) or Groq
+                </p>
+              </div>
+            </div>
+
+            <div className="custom-model-info-banner">
+              <AlertCircle size={20} className="custom-model-info-icon" />
+              <div>
+                <strong style={{ display: 'block', marginBottom: '2px' }}>Why did DeepSeek R1 & Llama 3.3 stop responding for free?</strong>
+                <span>
+                  OpenRouter retired the free-tier (:free) endpoints for both models. To use official DeepSeek R1 or Llama 3.3 70B, enter their slug below and provide your personal OpenRouter API Key. Or, use our built-in verified free models: <strong>Groq 120B Flagship</strong>, <strong>Qwen 27B Deep Reasoning</strong>, or <strong>Nemotron 30B Omni</strong>.
+                </span>
+              </div>
+            </div>
+
+            <div className="custom-model-section">
+              <label className="custom-field-label">
+                API Provider
+              </label>
+              <div className="provider-toggle-group">
+                <button
+                  type="button"
+                  className={`provider-toggle-btn ${customProvider === 'openrouter' ? 'active' : ''}`}
+                  onClick={() => setCustomProvider('openrouter')}
+                >
+                  <Globe size={15} />
+                  <span>OpenRouter (200+ AI Models)</span>
+                </button>
+                <button
+                  type="button"
+                  className={`provider-toggle-btn ${customProvider === 'groq' ? 'active' : ''}`}
+                  onClick={() => setCustomProvider('groq')}
+                >
+                  <Zap size={15} />
+                  <span>Groq (Ultra-Fast Hardware)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="custom-model-section">
+              <label className="custom-field-label">
+                Model Slug / ID
+              </label>
+              <input
+                type="text"
+                className="custom-model-input"
+                placeholder={customProvider === 'openrouter' ? "e.g. deepseek/deepseek-r1 or meta-llama/llama-3.3-70b-instruct" : "e.g. qwen/qwen3.8-27b or llama-3.1-8b-instant"}
+                value={customModelId}
+                onChange={(e) => setCustomModelId(e.target.value)}
+              />
+
+              <div className="preset-chips-wrap">
+                <span className="preset-chips-label">Quick Presets:</span>
+                <div className="preset-chips-list">
+                  {CUSTOM_PRESETS.map((preset) => (
+                    <button
+                      key={preset.slug}
+                      type="button"
+                      className={`preset-chip ${customModelId === preset.slug ? 'active' : ''}`}
+                      onClick={() => {
+                        setCustomModelId(preset.slug);
+                        setCustomProvider(preset.provider);
+                      }}
+                      title={preset.desc}
+                    >
+                      <span>{preset.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="custom-model-section">
+              <div className="custom-field-header-row">
+                <label className="custom-field-label">
+                  Personal API Key <span className="optional-tag">(Optional / Required for paid models)</span>
+                </label>
+                {customApiKey && (
+                  <button
+                    type="button"
+                    className="clear-key-btn"
+                    onClick={() => {
+                      setCustomApiKey('');
+                      try { localStorage.removeItem('engibot_custom_api_key'); } catch {}
+                    }}
+                  >
+                    Clear Key
+                  </button>
+                )}
+              </div>
+              <div className="api-key-input-wrap">
+                <Key size={15} className="api-key-icon" />
+                <input
+                  type={showCustomApiKey ? 'text' : 'password'}
+                  className="custom-model-input key-input"
+                  placeholder={customProvider === 'openrouter' ? "sk-or-v1-..." : "gsk_..."}
+                  value={customApiKey}
+                  onChange={(e) => setCustomApiKey(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="eye-toggle-btn"
+                  onClick={() => setShowCustomApiKey(!showCustomApiKey)}
+                  title={showCustomApiKey ? "Hide key" : "Show key"}
+                >
+                  {showCustomApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <p className="custom-field-hint">
+                🔒 Stored locally in your browser storage. Never exposed or logged on the server.
+              </p>
+            </div>
+
+            <div className="custom-model-footer">
+              <button
+                type="button"
+                className="custom-modal-cancel-btn"
+                onClick={() => setIsCustomModelModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="custom-modal-save-btn"
+                onClick={() => {
+                  const finalModel = customModelId.trim() || 'deepseek/deepseek-r1';
+                  try {
+                    localStorage.setItem('engibot_custom_model_id', finalModel);
+                    localStorage.setItem('engibot_custom_provider', customProvider);
+                    if (customApiKey.trim()) {
+                      localStorage.setItem('engibot_custom_api_key', customApiKey.trim());
+                    } else {
+                      localStorage.removeItem('engibot_custom_api_key');
+                    }
+                    localStorage.setItem('engibot_selected_model', 'custom');
+                  } catch {}
+                  setCustomModelId(finalModel);
+                  setSelectedModel('custom');
+                  setIsCustomModelModalOpen(false);
+                }}
+              >
+                <Check size={16} />
+                <span>Save & Activate Model</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

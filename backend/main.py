@@ -435,6 +435,9 @@ class ChatRequest(BaseModel):
     file_size: Optional[int] = None
     file_text: Optional[str] = None
     model_provider: Optional[str] = "auto"
+    custom_model_id: Optional[str] = None
+    custom_api_key: Optional[str] = None
+    custom_provider: Optional[str] = None
 
 class ImageGenerateRequest(BaseModel):
     prompt: str
@@ -955,47 +958,46 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
         "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
     }
 
-    return {
-        "id": user.id,
-        "username": user.username,
-        "name": user.name or user.username,
-        "email": user.email,
-        "discipline": getattr(user, "discipline", "general") or "general",
-        "role": getattr(user, "role", "student") or "student",
-        "preferred_mode": getattr(user, "preferred_mode", "learn") or "learn"
-    }
-
 def generate_ai_response(
     system_instruction: str, 
     history_messages: list, 
     new_user_message: str,
     preferred_provider: Optional[str] = "auto",
+    custom_model_id: Optional[str] = None,
+    custom_api_key: Optional[str] = None,
+    custom_provider: Optional[str] = None,
     return_model: bool = False
 ):
     ai_provider = os.getenv("AI_PROVIDER", "auto").strip().lower()
     ollama_model = os.getenv("OLLAMA_MODEL", "engibot-model").strip()
     ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
-    # 0. Helper function to query Groq API (Ultra-fast, 120B parameter reasoning with multi-key pool)
-    def try_groq():
+    # 0. Helper function to query Groq API (Ultra-fast 120B parameter and reasoning models)
+    def try_groq(target_model: Optional[str] = None, user_key: Optional[str] = None, strict: bool = False):
         raw_key_str = os.getenv("GROQ_API_KEY", "").strip()
-        groq_keys = [k.strip() for k in raw_key_str.split(",") if k.strip()] if raw_key_str else []
+        groq_keys = []
+        if user_key and user_key.strip():
+            groq_keys.append(user_key.strip())
+        if raw_key_str:
+            groq_keys.extend([k.strip() for k in raw_key_str.split(",") if k.strip()])
         for i in range(1, 10):
             k = os.getenv(f"GROQ_API_KEY_{i}", "").strip()
             if k and k not in groq_keys:
                 groq_keys.append(k)
 
         if not groq_keys:
+            if strict:
+                raise Exception("No Groq API key configured. Please provide a Groq API Key in Custom Model settings.")
             return None
 
         configured_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
-        candidate_models = [
-            configured_model,
-            "openai/gpt-oss-120b",
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-20b"
-        ]
-        unique_models = list(dict.fromkeys([m for m in candidate_models if m]))
+        if strict and target_model:
+            models_to_try = [target_model]
+        elif target_model:
+            models_to_try = [target_model, configured_model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+        else:
+            models_to_try = [configured_model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+        unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         messages_payload = [{"role": "system", "content": system_instruction}]
         for msg in history_messages:
@@ -1027,18 +1029,37 @@ def generate_ai_response(
                         result = res.json()
                         choices = result.get("choices", [])
                         if choices:
-                            return choices[0]["message"]["content"], f"Groq ({model_name})"
+                            if "120b" in model_name:
+                                label = "Groq 120B Flagship"
+                            elif "qwen" in model_name:
+                                label = "Qwen 27B Reasoning"
+                            else:
+                                label = f"Groq ({model_name})"
+                            return choices[0]["message"]["content"], label
                     else:
-                        last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:120]}"
-                        print(f"[GROQ WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}). Trying next model or key...")
+                        last_error = f"Groq {model_name} HTTP {res.status_code}: {res.text[:140]}"
+                        print(f"[GROQ WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}).")
+                        if strict:
+                            err_msg = res.text[:200]
+                            try:
+                                ej = res.json()
+                                if "error" in ej and "message" in ej["error"]:
+                                    err_msg = ej["error"]["message"]
+                            except:
+                                pass
+                            raise Exception(f"HTTP {res.status_code}: {err_msg}")
                         if res.status_code in (429, 401, 403):
                             break
                 except Exception as e:
                     last_error = str(e)
-                    print(f"[GROQ EXCEPTION] {model_name}: {e}. Trying next model...")
+                    if strict:
+                        raise e
+                    print(f"[GROQ EXCEPTION] {model_name}: {e}. Trying next...")
 
         if last_error:
-            print(f"[AI ROUTER] Groq failed across all keys/models: {last_error}")
+            if strict:
+                raise Exception(f"Groq execution failed: {last_error}")
+            print(f"[AI ROUTER] Groq failed: {last_error}")
         return None
 
     # 1. Helper function to query Claude API (Anthropic Messages Endpoint)
@@ -1096,32 +1117,44 @@ def generate_ai_response(
         else:
             raise Exception(f"Ollama Error ({res.status_code}): {res.text}")
 
-    # 3. Helper function to query OpenRouter AI (with multi-key pool, model selection and auto-rotation)
-    def try_openrouter(target_model: Optional[str] = None):
+    # 3. Helper function to query OpenRouter AI (with multi-key pool, model selection and custom user keys)
+    def try_openrouter(target_model: Optional[str] = None, user_key: Optional[str] = None, strict: bool = False):
         raw_key_str = os.getenv("OPENROUTER_API_KEY", "").strip()
-        openrouter_keys = [k.strip() for k in raw_key_str.split(",") if k.strip()] if raw_key_str else []
+        openrouter_keys = []
+        if user_key and user_key.strip():
+            openrouter_keys.append(user_key.strip())
+        if raw_key_str:
+            openrouter_keys.extend([k.strip() for k in raw_key_str.split(",") if k.strip()])
         for i in range(1, 10):
             k = os.getenv(f"OPENROUTER_API_KEY_{i}", "").strip()
             if k and k not in openrouter_keys:
                 openrouter_keys.append(k)
 
         if not openrouter_keys:
+            if strict:
+                raise Exception("No OpenRouter API key configured. Please provide an OpenRouter API key in Custom Model settings.")
             return None
 
-        configured_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free").strip()
-        candidate_models = []
-        if target_model:
-            candidate_models.append(target_model)
-        candidate_models.extend([
-            configured_model,
-            "deepseek/deepseek-r1:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "nvidia/nemotron-3.5-lightning:free",
-            "liquid/lfm-3-1.7b:free",
-            "cohere/north-mini-code:free",
-            "baidu/ernie-5.5-flash-preview:free"
-        ])
-        unique_models = list(dict.fromkeys([m for m in candidate_models if m]))
+        configured_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free").strip()
+        if strict and target_model:
+            models_to_try = [target_model]
+        elif target_model:
+            models_to_try = [
+                target_model,
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "cohere/north-mini-code:free"
+            ]
+        else:
+            models_to_try = [
+                configured_model,
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "cohere/north-mini-code:free"
+            ]
+        unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         messages_payload = [{"role": "system", "content": system_instruction}]
         for msg in history_messages:
@@ -1147,24 +1180,46 @@ def generate_ai_response(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers=headers,
                         json=payload,
-                        timeout=30
+                        timeout=35
                     )
                     if res.status_code == 200:
                         result = res.json()
                         choices = result.get("choices", [])
                         if choices:
-                            return choices[0]["message"]["content"], f"OpenRouter ({model_name})"
+                            if "nano-omni-30b" in model_name:
+                                label = "Nemotron 30B Omni Reasoning"
+                            elif "ultra-550b" in model_name:
+                                label = "Nemotron 550B Ultra"
+                            elif "north-mini-code" in model_name:
+                                label = "Cohere Mini Code"
+                            elif "nemotron-3.5" in model_name:
+                                label = "Nemotron 3.5 Cloud"
+                            else:
+                                label = f"OpenRouter ({model_name})"
+                            return choices[0]["message"]["content"], label
                     else:
-                        last_error = f"{model_name} HTTP {res.status_code}: {res.text[:120]}"
-                        print(f"[OPENROUTER WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}). Trying next model or key...")
-                        # If rate limited (429) or quota exhausted (402/401), break to try next key immediately
+                        last_error = f"{model_name} HTTP {res.status_code}: {res.text[:140]}"
+                        print(f"[OPENROUTER WARNING] {last_error} (Key: ...{key[-6:] if len(key)>=6 else '***'}).")
+                        if strict:
+                            err_msg = res.text[:200]
+                            try:
+                                ej = res.json()
+                                if "error" in ej and "message" in ej["error"]:
+                                    err_msg = ej["error"]["message"]
+                            except:
+                                pass
+                            raise Exception(f"HTTP {res.status_code}: {err_msg}")
                         if res.status_code in (429, 402, 401):
                             break
                 except Exception as e:
                     last_error = str(e)
-                    print(f"[OPENROUTER EXCEPTION] {model_name} (Key: ...{key[-6:] if len(key)>=6 else '***'}): {e}. Trying next...")
+                    if strict:
+                        raise e
+                    print(f"[OPENROUTER EXCEPTION] {model_name}: {e}. Trying next...")
 
         if last_error:
+            if strict:
+                raise Exception(f"All keys/attempts failed: {last_error}")
             raise Exception(f"All OpenRouter keys and models failed: {last_error}")
         return None
 
@@ -1197,67 +1252,160 @@ def generate_ai_response(
     # Route according to preferred_provider selection (from UI model selector)
     pref = (preferred_provider or ai_provider or "auto").strip().lower()
 
-    # Case A: Explicitly selected Groq 120B
+    # Case 0: Explicit CUSTOM Model Selection OR explicit custom_model_id provided
+    if pref == "custom" or (custom_model_id and pref not in ("auto", "groq", "qwen", "nemotron-omni", "nemotron-ultra", "cohere-code", "openrouter")):
+        target_model = (custom_model_id or "deepseek/deepseek-r1").strip()
+        target_provider = (custom_provider or "").strip().lower()
+        if not target_provider:
+            if target_model.startswith(("openai/gpt-oss", "qwen/")) or (custom_api_key and custom_api_key.startswith("gsk_")):
+                target_provider = "groq"
+            else:
+                target_provider = "openrouter"
+
+        try:
+            if target_provider == "groq":
+                res = try_groq(target_model=target_model, user_key=custom_api_key, strict=True)
+            else:
+                res = try_openrouter(target_model=target_model, user_key=custom_api_key, strict=True)
+            if res:
+                return (res[0], f"Custom ({target_model})") if return_model else res[0]
+        except Exception as e:
+            err_msg = str(e)
+            user_notice = (
+                f"⚠️ **Custom Model Notice ({target_model})**\n\n"
+                f"Could not connect to `{target_model}` via `{target_provider.capitalize()}`.\n\n"
+                f"**Details**: {err_msg}\n\n"
+                f"**How to resolve:**\n"
+                f"1. **Paid Model Credits**: Models like `deepseek/deepseek-r1`, `meta-llama/llama-3.3-70b-instruct`, `anthropic/claude-3.5-sonnet`, and `google/gemini-2.0-flash-001` require an OpenRouter account with API credits. Open **Custom AI Model** settings to paste your API Key.\n"
+                f"2. **Or use verified free models**: Select **Groq 120B Flagship**, **Qwen 27B Deep Reasoning**, or **Nemotron 30B Omni** from the model dropdown for instant answers at zero cost."
+            )
+            return (user_notice, f"Notice ({target_model})") if return_model else user_notice
+
+    # Case 1: Groq 120B Flagship
     if pref in ("groq", "groq-120b"):
         try:
-            groq_res = try_groq()
+            groq_res = try_groq(target_model="openai/gpt-oss-120b", user_key=custom_api_key)
             if groq_res:
                 return groq_res if return_model else groq_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Explicit Groq request warning ({e}). Falling back to OpenRouter...")
+            print(f"[AI ROUTER] Groq 120B failed ({e}). Falling back...")
         try:
-            or_res = try_openrouter()
+            or_res = try_openrouter(target_model="nvidia/nemotron-3-ultra-550b-a55b:free", user_key=custom_api_key)
             if or_res:
                 return or_res if return_model else or_res[0]
         except Exception:
             pass
 
-    # Case B: Explicitly selected DeepSeek R1 Reasoning (Powered by OpenRouter pool)
-    elif pref in ("deepseek", "deepseek-r1", "deepseek-reasoner"):
+    # Case 2: Qwen 27B Deep Reasoning
+    elif pref in ("qwen", "qwen-27b", "reasoning"):
         try:
-            ds_res = try_openrouter(target_model="deepseek/deepseek-r1:free")
-            if ds_res:
-                return ds_res if return_model else ds_res[0]
+            qwen_res = try_groq(target_model="qwen/qwen3.8-27b", user_key=custom_api_key)
+            if qwen_res:
+                return qwen_res if return_model else qwen_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Explicit DeepSeek request failed ({e}). Falling back to Groq...")
+            print(f"[AI ROUTER] Qwen 27B failed ({e}). Trying Nemotron Omni...")
         try:
-            groq_res = try_groq()
+            omni_res = try_openrouter(target_model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", user_key=custom_api_key)
+            if omni_res:
+                return omni_res if return_model else omni_res[0]
+        except Exception:
+            pass
+
+    # Case 3: Nemotron 30B Omni Reasoning (OpenRouter free chain-of-thought)
+    elif pref in ("nemotron-omni", "nemotron-30b", "omni"):
+        try:
+            omni_res = try_openrouter(target_model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", user_key=custom_api_key)
+            if omni_res:
+                return omni_res if return_model else omni_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Nemotron Omni failed ({e}). Trying Qwen 27B...")
+        try:
+            qwen_res = try_groq(target_model="qwen/qwen3.8-27b", user_key=custom_api_key)
+            if qwen_res:
+                return qwen_res if return_model else qwen_res[0]
+        except Exception:
+            pass
+
+    # Case 4: Nemotron 550B Ultra (Massive 550B flagship scale)
+    elif pref in ("nemotron-ultra", "nemotron-550b", "ultra"):
+        try:
+            ultra_res = try_openrouter(target_model="nvidia/nemotron-3-ultra-550b-a55b:free", user_key=custom_api_key)
+            if ultra_res:
+                return ultra_res if return_model else ultra_res[0]
+        except Exception as e:
+            print(f"[AI ROUTER] Nemotron 550B failed ({e}). Falling back to Groq 120B...")
+        try:
+            groq_res = try_groq(target_model="openai/gpt-oss-120b", user_key=custom_api_key)
             if groq_res:
                 return groq_res if return_model else groq_res[0]
         except Exception:
             pass
 
-    # Case C: Explicitly selected Meta Llama 3.3 70B (Powered by OpenRouter pool)
-    elif pref in ("llama", "llama-3.3", "llama-70b"):
+    # Case 5: Cohere North Mini Code (Specialized code generation)
+    elif pref in ("cohere-code", "code"):
         try:
-            llama_res = try_openrouter(target_model="meta-llama/llama-3.3-70b-instruct:free")
-            if llama_res:
-                return llama_res if return_model else llama_res[0]
+            code_res = try_openrouter(target_model="cohere/north-mini-code:free", user_key=custom_api_key)
+            if code_res:
+                return code_res if return_model else code_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Explicit Llama request failed ({e}). Falling back to OpenRouter pool...")
+            print(f"[AI ROUTER] Cohere code failed ({e}). Falling back to Groq 120B...")
         try:
-            or_res = try_openrouter()
-            if or_res:
-                return or_res if return_model else or_res[0]
+            groq_res = try_groq(target_model="openai/gpt-oss-120b", user_key=custom_api_key)
+            if groq_res:
+                return groq_res if return_model else groq_res[0]
         except Exception:
             pass
 
-    # Case D: Explicitly selected OpenRouter Cloud
+    # Case 6: OpenRouter Nemotron 3.5 Cloud
     elif pref in ("openrouter", "nemotron", "cloud"):
         try:
-            or_res = try_openrouter()
+            or_res = try_openrouter(target_model="nvidia/nemotron-3.5-lightning:free", user_key=custom_api_key)
             if or_res:
                 return or_res if return_model else or_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Explicit OpenRouter request warning ({e}). Falling back to Groq...")
+            print(f"[AI ROUTER] Nemotron 3.5 failed ({e}). Falling back to Groq...")
         try:
-            groq_res = try_groq()
+            groq_res = try_groq(target_model="openai/gpt-oss-120b", user_key=custom_api_key)
             if groq_res:
                 return groq_res if return_model else groq_res[0]
         except Exception:
             pass
 
-    # Case E: Explicitly selected Local Ollama
+    # Case 7: DeepSeek R1 Selection
+    elif pref in ("deepseek", "deepseek-r1", "deepseek-reasoner"):
+        if custom_api_key:
+            try:
+                ds_res = try_openrouter(target_model="deepseek/deepseek-r1", user_key=custom_api_key, strict=True)
+                if ds_res:
+                    return (ds_res[0], "DeepSeek R1") if return_model else ds_res[0]
+            except Exception as e:
+                print(f"[AI ROUTER] User DeepSeek R1 key query failed: {e}")
+        # Free-tier reasoning routing with transparent attribution
+        qwen_res = try_groq(target_model="qwen/qwen3.8-27b")
+        if qwen_res:
+            return (qwen_res[0], "Qwen 27B Reasoning") if return_model else qwen_res[0]
+        omni_res = try_openrouter(target_model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
+        if omni_res:
+            return (omni_res[0], "Nemotron 30B Omni Reasoning") if return_model else omni_res[0]
+
+    # Case 8: Meta Llama 3.3 70B Selection
+    elif pref in ("llama", "llama-3.3", "llama-70b"):
+        if custom_api_key:
+            try:
+                llama_res = try_openrouter(target_model="meta-llama/llama-3.3-70b-instruct", user_key=custom_api_key, strict=True)
+                if llama_res:
+                    return (llama_res[0], "Llama 3.3 70B") if return_model else llama_res[0]
+            except Exception as e:
+                print(f"[AI ROUTER] User Llama 3.3 key query failed: {e}")
+        # Free-tier large model routing with transparent attribution
+        ultra_res = try_openrouter(target_model="nvidia/nemotron-3-ultra-550b-a55b:free")
+        if ultra_res:
+            return (ultra_res[0], "Nemotron 550B Ultra") if return_model else ultra_res[0]
+        groq_res = try_groq(target_model="openai/gpt-oss-120b")
+        if groq_res:
+            return (groq_res[0], "Groq 120B Flagship") if return_model else groq_res[0]
+
+    # Case 9: Explicitly selected Local Ollama
     elif pref in ("ollama", "local"):
         try:
             ollama_res = try_ollama()
@@ -1266,20 +1414,41 @@ def generate_ai_response(
         except Exception as e:
             print(f"[AI ROUTER] Explicit Ollama request failed ({e}). Falling back to Groq...")
         try:
-            groq_res = try_groq()
+            groq_res = try_groq(target_model="openai/gpt-oss-120b")
             if groq_res:
                 return groq_res if return_model else groq_res[0]
         except Exception:
             pass
 
-    # Case D: Auto Smart Cascade (Default: Groq -> Claude -> Ollama -> OpenRouter -> Bedrock)
+    # Case 10: Auto Smart Cascade (Default: Groq 120B -> Qwen 27B -> Nemotron 550B Ultra -> Nemotron 30B Omni -> Claude -> Bedrock)
     if os.getenv("GROQ_API_KEY", "").strip():
         try:
-            groq_res = try_groq()
+            groq_res = try_groq(target_model="openai/gpt-oss-120b", user_key=custom_api_key)
             if groq_res:
-                return groq_res if return_model else groq_res[0]
+                return (groq_res[0], "Groq 120B Flagship") if return_model else groq_res[0]
         except Exception as e:
-            print(f"[AI ROUTER] Groq API warning ({e}). Falling back to next provider...")
+            print(f"[AI ROUTER] Groq 120B warning ({e}). Trying Qwen 27B...")
+
+    try:
+        qwen_res = try_groq(target_model="qwen/qwen3.8-27b", user_key=custom_api_key)
+        if qwen_res:
+            return (qwen_res[0], "Qwen 27B Reasoning") if return_model else qwen_res[0]
+    except Exception:
+        pass
+
+    try:
+        ultra_res = try_openrouter(target_model="nvidia/nemotron-3-ultra-550b-a55b:free", user_key=custom_api_key)
+        if ultra_res:
+            return ultra_res if return_model else ultra_res[0]
+    except Exception:
+        pass
+
+    try:
+        omni_res = try_openrouter(target_model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", user_key=custom_api_key)
+        if omni_res:
+            return omni_res if return_model else omni_res[0]
+    except Exception:
+        pass
 
     if ai_provider in ("claude", "anthropic") or os.getenv("ANTHROPIC_API_KEY", "").strip():
         try:
@@ -1297,7 +1466,7 @@ def generate_ai_response(
         print(f"[AI ROUTER] Ollama local model not available ({e}). Falling back...")
 
     try:
-        or_res = try_openrouter()
+        or_res = try_openrouter(target_model="nvidia/nemotron-3.5-lightning:free", user_key=custom_api_key)
         if or_res:
             return or_res if return_model else or_res[0]
     except Exception as e:
@@ -1310,7 +1479,7 @@ def generate_ai_response(
     except Exception as e:
         print(f"[AI ROUTER] Bedrock error: {e}")
 
-    raise Exception("No AI provider responded successfully. Please check your Groq, Ollama, or OpenRouter configuration in backend/.env")
+    raise Exception("No AI provider responded successfully. Please check your Groq or OpenRouter configuration in backend/.env")
 
 @app.post("/api/chat")
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
@@ -1362,10 +1531,11 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 language=active_lang
             )
 
-        # Retrieve previous messages for context within this conversation
-        history_msgs = db.query(ChatMessage).filter(
+        # Retrieve previous messages for context within this conversation (most recent 20 in chronological order)
+        recent_msgs = db.query(ChatMessage).filter(
             ChatMessage.conversation_id == conv.id
-        ).order_by(ChatMessage.timestamp.asc()).limit(20).all()
+        ).order_by(ChatMessage.timestamp.desc()).limit(20).all()
+        history_msgs = list(reversed(recent_msgs))
 
         user_msg = ChatMessage(
             user_id=request.user_id,
@@ -1466,6 +1636,9 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             history_messages=history_msgs,
             new_user_message=augmented_prompt,
             preferred_provider=request.model_provider,
+            custom_model_id=request.custom_model_id,
+            custom_api_key=request.custom_api_key,
+            custom_provider=request.custom_provider,
             return_model=True
         )
 
