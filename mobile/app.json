@@ -5,16 +5,18 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
-      "backgroundColor": "#3b82f6"
+      "backgroundColor": "#212121"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.engibot.app"
     },
     "android": {
+      "package": "com.engibot.app",
       "adaptiveIcon": {
-        "backgroundColor": "#3b82f6",
+        "backgroundColor": "#212121",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
