@@ -25,19 +25,102 @@ const SAFE_STATUS_BAR_HEIGHT = Platform.OS === 'android' ? ((StatusBar.currentHe
 const DEFAULT_API_URL = 'https://engibot-n8e6.onrender.com';
 const LOCAL_WIFI_URL = 'http://192.168.1.35:8000';
 
+// ==========================================
+// 1. MODELS & DISCIPLINES (PARITY WITH WEB)
+// ==========================================
+const MODEL_OPTIONS = [
+  {
+    id: 'auto',
+    name: 'Auto (Smart Route)',
+    shortName: 'Auto Route',
+    subtitle: 'Intelligent multi-model cascade',
+    badge: '✨ Recommended',
+    color: '#a855f7',
+    icon: 'sparkles',
+    desc: 'Auto-detects problem type. Routes calculations to Groq 120B and deep proofs to Qwen 27B / Nemotron.'
+  },
+  {
+    id: 'groq',
+    name: 'Groq 120B Flagship',
+    shortName: 'Groq 120B',
+    subtitle: 'Flagship • openai/gpt-oss-120b',
+    badge: '⚡ 120B Ultra-Fast',
+    color: '#f59e0b',
+    icon: 'flash',
+    desc: '120-Billion parameter engine. Sub-second speed, best for rapid calculations, formulas & code.'
+  },
+  {
+    id: 'qwen',
+    name: 'Qwen 27B Deep Reasoning',
+    shortName: 'Qwen 27B',
+    subtitle: 'Groq Engine • qwen/qwen3.8-27b',
+    badge: '🧠 Deep Math & Logic',
+    color: '#ec4899',
+    icon: 'hardware-chip',
+    desc: 'Specialized mathematical, algorithmic, and engineering structural derivation model.'
+  },
+  {
+    id: 'nemotron-omni',
+    name: 'Nemotron 30B Omni Reasoning',
+    shortName: 'Nemotron 30B',
+    subtitle: 'OpenRouter • Chain-of-Thought',
+    badge: '🔬 Step-by-Step Logic',
+    color: '#06b6d4',
+    icon: 'git-network',
+    desc: 'Active free chain-of-thought logic engine. Great for circuit theory, proofs & analysis.'
+  },
+  {
+    id: 'nemotron-ultra',
+    name: 'Nemotron 550B Ultra',
+    shortName: 'Nemotron 550B',
+    subtitle: 'OpenRouter • 550-Billion Scale',
+    badge: '🏛️ 550B Flagship',
+    color: '#10b981',
+    icon: 'planet',
+    desc: 'Massive 550-Billion parameter open-weights model for comprehensive engineering textbooks & systems.'
+  },
+  {
+    id: 'cohere-code',
+    name: 'Cohere Mini Code',
+    shortName: 'Cohere Code',
+    subtitle: 'OpenRouter • Code & Syntax',
+    badge: '💻 Algorithms & Code',
+    color: '#8b5cf6',
+    icon: 'code-slash',
+    desc: 'Optimized for Python, C++, Java, MATLAB, Verilog, SQL, and algorithm design.'
+  },
+  {
+    id: 'openrouter',
+    name: 'Nemotron 3.5 Cloud',
+    shortName: 'Nemotron 3.5',
+    subtitle: 'OpenRouter • Cloud Throughput',
+    badge: '🌐 Cloud Throughput',
+    color: '#3b82f6',
+    icon: 'globe',
+    desc: 'High-throughput cloud backup. Great for conceptual explanations & syllabus Q&A.'
+  }
+];
+
 const DISCIPLINES = [
-  { id: 'general', name: 'General', modelName: 'EngiBot 4o', icon: 'sparkles', prompt: 'You are an expert engineering assistant.' },
-  { id: 'cse', name: 'Computer Science', modelName: 'EngiBot CSE', icon: 'hardware-chip-outline', prompt: 'You are an expert Computer Science Engineer. Help with programming, algorithms, system design, and software engineering.' },
-  { id: 'civil', name: 'Civil', modelName: 'EngiBot Civil', icon: 'construct-outline', prompt: 'You are an expert Civil Engineer. Help with structural design, construction materials, fluid mechanics, and surveying.' },
-  { id: 'ece', name: 'Electronics', modelName: 'EngiBot ECE', icon: 'radio-outline', prompt: 'You are an expert Electronics and Communication Engineer. Help with circuits, signals & systems, microprocessors, and communication theory.' },
-  { id: 'eee', name: 'Electrical', modelName: 'EngiBot EEE', icon: 'flash-outline', prompt: 'You are an expert Electrical Engineer. Help with power systems, electrical machines, control systems, and power electronics.' },
-  { id: 'mech', name: 'Mechanical', modelName: 'EngiBot Mech', icon: 'settings-outline', prompt: 'You are an expert Mechanical Engineer. Help with thermodynamics, solid mechanics, manufacturing, and machine design.' },
+  { id: 'general', name: 'General Engineering', short: 'General', icon: 'chatbubbles-outline', prompt: 'You are an expert engineering assistant.' },
+  { id: 'cse', name: 'Computer Science (CSE)', short: 'CSE', icon: 'hardware-chip-outline', prompt: 'You are an expert Computer Science Engineer. Help with programming, algorithms, system design, and software engineering.' },
+  { id: 'civil', name: 'Civil Engineering', short: 'Civil', icon: 'construct-outline', prompt: 'You are an expert Civil Engineer. Help with structural design, construction materials, fluid mechanics, and surveying.' },
+  { id: 'ece', name: 'Electronics (ECE)', short: 'ECE', icon: 'radio-outline', prompt: 'You are an expert Electronics and Communication Engineer. Help with circuits, signals & systems, microprocessors, and communication theory.' },
+  { id: 'eee', name: 'Electrical (EEE)', short: 'EEE', icon: 'flash-outline', prompt: 'You are an expert Electrical Engineer. Help with power systems, electrical machines, control systems, and power electronics.' },
+  { id: 'mech', name: 'Mechanical (Mech)', short: 'Mech', icon: 'settings-outline', prompt: 'You are an expert Mechanical Engineer. Help with thermodynamics, solid mechanics, manufacturing, and machine design.' },
+];
+
+const LANGUAGES = [
+  { id: 'en', name: 'English' },
+  { id: 'hi', name: 'Hindi (हिंदी)' },
+  { id: 'od', name: 'Odia (ଓଡ଼ିଆ)' },
+  { id: 'te', name: 'Telugu (తెలుగు)' },
 ];
 
 const SUGGESTIONS = [
-  { id: '1', title: 'Beam Bending Moment', desc: 'Calculate max moment for cantilever load', branch: 'civil', prompt: 'Calculate the maximum bending moment and deflection for a 4m cantilever steel beam with a 25 kN point load at the free end.' },
-  { id: '2', title: '3-Phase Cable Sizing', desc: 'Determine cable size by current & drop', branch: 'eee', prompt: 'Calculate cable size for a 3-phase 415V 45 kW motor with 0.85 power factor, 120m run length, allowing max 3% voltage drop.' },
-  { id: '3', title: 'B-Tree Node Insertion', desc: 'Algorithm and Big-O time complexity', branch: 'cse', prompt: 'Explain the algorithm and time complexity for inserting a key into a B-Tree of order m with split logic.' },
+  { id: '1', title: 'Cantilever Beam Bending', desc: 'Max moment & deflection analysis', branch: 'civil', prompt: 'Calculate the maximum bending moment and deflection for a 4m cantilever steel beam with a 25 kN point load at the free end.' },
+  { id: '2', title: '3-Phase Cable Sizing', desc: 'Determine wire gauge by current & drop', branch: 'eee', prompt: 'Calculate cable size for a 3-phase 415V 45 kW motor with 0.85 power factor, 120m run length, allowing max 3% voltage drop.' },
+  { id: '3', title: 'B-Tree Node Insertion', desc: 'Algorithm & Big-O time complexity', branch: 'cse', prompt: 'Explain the algorithm and time complexity for inserting a key into a B-Tree of order m with split logic.' },
   { id: '4', title: 'Stress-Strain & Safety', desc: 'Tensile test & yield strength factor', branch: 'mech', prompt: 'Compute tensile stress and factor of safety for a 20mm diameter rod carrying an 80 kN axial tensile load with 250 MPa yield strength.' },
 ];
 
@@ -50,20 +133,31 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const isDark = theme === 'dark';
 
-  // Auth State
-  const [authMode, setAuthMode] = useState('otp'); // 'otp' | 'password' | 'register'
-  const [otpStep, setOtpStep] = useState('enter-email');
+  // Core Engineering Controls
+  const [selectedModel, setSelectedModel] = useState('auto');
+  const [activeDiscipline, setActiveDiscipline] = useState(DISCIPLINES[0]);
+  const [mode, setMode] = useState('learn'); // 'learn' (Student) | 'work' (Professional)
+  const [language, setLanguage] = useState('en');
+
+  // Auth State (Same as Web: 'otp' | 'login' | 'register' | 'forgot')
+  const [authMode, setAuthMode] = useState('otp');
+  const [otpStep, setOtpStep] = useState('enter-email'); // 'enter-email' | 'enter-code'
+  const [forgotStep, setForgotStep] = useState('request-otp'); // 'request-otp' | 'reset-password'
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
   const [fullNameInput, setFullNameInput] = useState('');
+  const [phoneInput] = useState('');
+  const [dobInput] = useState('2001-01-01');
+  const [regSemester] = useState(5);
+  const [regDiscipline, setRegDiscipline] = useState('cse');
   const [countdown, setCountdown] = useState(0);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authAlert, setAuthAlert] = useState(null);
 
   // Chat State
-  const [activeDiscipline, setActiveDiscipline] = useState(DISCIPLINES[0]);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -71,15 +165,58 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  // Modals & Sheets (ChatGPT style)
+  // Modals & Sheets
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [modelPickerVisible, setModelPickerVisible] = useState(false);
+  const [disciplinePickerVisible, setDisciplinePickerVisible] = useState(false);
   const [toolsModalVisible, setToolsModalVisible] = useState(false);
+  const [calcModalVisible, setCalcModalVisible] = useState(false);
+  const [examModalVisible, setExamModalVisible] = useState(false);
+  const [diagramModalVisible, setDiagramModalVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [customApiUrl, setCustomApiUrl] = useState(DEFAULT_API_URL);
 
-  // Chat History Drawer items
+  // Conversations State
   const [conversations, setConversations] = useState([]);
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+
+  // Calculator Form State
+  const [calcTab, setCalcTab] = useState('civil'); // 'civil' | 'eee' | 'ece' | 'cse' | 'mech' | 'general'
+  const [calcLoading, setCalcLoading] = useState(false);
+  const [calcResult, setCalcResult] = useState(null);
+  // Beam
+  const [beamType] = useState('cantilever');
+  const [beamLoadType] = useState('point');
+  const [beamSpan, setBeamSpan] = useState(4.0);
+  const [beamLoad, setBeamLoad] = useState(25.0);
+  // Cable
+  const [cableKw, setCableKw] = useState(45.0);
+  const [cableVolt] = useState(415.0);
+  const [cableLen, setCableLen] = useState(120.0);
+  // Circuit
+  const [circR, setCircR] = useState(50.0);
+  const [circL, setCircL] = useState(100.0);
+  const [circC] = useState(10.0);
+  // Stress
+  const [stressForce, setStressForce] = useState(80.0);
+  const [stressDim1, setStressDim1] = useState(20.0);
+  const [stressYield] = useState(250.0);
+  // Unit Converter
+  const [unitCategory] = useState('pressure');
+  const [unitVal, setUnitVal] = useState(1.0);
+  const [unitFrom] = useState('bar');
+  const [unitTo] = useState('pascal');
+
+  // Exam Prep State
+  const [examTab, setExamTab] = useState('pyq'); // 'pyq' | 'quiz' | 'flashcards'
+  const [examTopic, setExamTopic] = useState('Engineering Mechanics');
+  const [examLoading, setExamLoading] = useState(false);
+  const [examResult, setExamResult] = useState(null);
+
+  // Diagram Studio State
+  const [diagramPrompt, setDiagramPrompt] = useState('Microservices architecture diagram');
+  const [diagramStyle, setDiagramStyle] = useState('schematic');
+  const [diagramLoading, setDiagramLoading] = useState(false);
 
   const flatListRef = useRef(null);
 
@@ -93,12 +230,25 @@ export default function App() {
           setCustomApiUrl(storedUrl);
         }
         const storedTheme = await AsyncStorage.getItem('engibot_theme');
-        if (storedTheme) {
-          setTheme(storedTheme);
-        }
+        if (storedTheme) setTheme(storedTheme);
+
+        const storedModel = await AsyncStorage.getItem('engibot_selected_model');
+        if (storedModel) setSelectedModel(storedModel);
+
+        const storedMode = await AsyncStorage.getItem('engibot_mode');
+        if (storedMode) setMode(storedMode);
+
+        const storedLang = await AsyncStorage.getItem('engibot_lang');
+        if (storedLang) setLanguage(storedLang);
+
         const storedUser = await AsyncStorage.getItem('chat_user');
         if (storedUser) {
-          setUser(JSON.parse(storedUser));
+          const parsed = JSON.parse(storedUser);
+          setUser(parsed);
+          if (parsed.discipline) {
+            const found = DISCIPLINES.find((d) => d.id === parsed.discipline);
+            if (found) setActiveDiscipline(found);
+          }
         }
       } catch (e) {
         console.error('Init error:', e);
@@ -108,7 +258,7 @@ export default function App() {
     })();
   }, []);
 
-  // Countdown timer for OTP
+  // OTP Countdown
   useEffect(() => {
     if (countdown <= 0) return;
     const timer = setInterval(() => {
@@ -117,13 +267,17 @@ export default function App() {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  // Load chat history when user or branch changes
+  // Load chat history when user or conversation changes
   useEffect(() => {
     if (!user) return;
     let isMounted = true;
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`${apiUrl}/api/history/${user.id}?discipline=${activeDiscipline.id}`);
+        let endpoint = `${apiUrl}/api/history/${user.id}?discipline=${activeDiscipline.id}`;
+        if (currentConversationId) {
+          endpoint = `${apiUrl}/api/conversations/${currentConversationId}/messages`;
+        }
+        const res = await fetch(endpoint);
         if (res.ok) {
           const data = await res.json();
           if (isMounted && Array.isArray(data)) {
@@ -138,9 +292,9 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [user, activeDiscipline, apiUrl]);
+  }, [user, activeDiscipline, currentConversationId, apiUrl]);
 
-  // Fetch past conversation threads for the Drawer
+  // Fetch past conversations list for Drawer
   const fetchConversationsList = async () => {
     if (!user) return;
     try {
@@ -167,7 +321,28 @@ export default function App() {
     await AsyncStorage.setItem('engibot_theme', nextTheme);
   };
 
-  // 1-Tap Demo Login (Zero typing required!)
+  const toggleMode = async () => {
+    const nextMode = mode === 'learn' ? 'work' : 'learn';
+    setMode(nextMode);
+    await AsyncStorage.setItem('engibot_mode', nextMode);
+  };
+
+  const handleSelectModel = async (modelId) => {
+    setSelectedModel(modelId);
+    await AsyncStorage.setItem('engibot_selected_model', modelId);
+    setModelPickerVisible(false);
+  };
+
+  const handleSelectLanguage = async (langId) => {
+    setLanguage(langId);
+    await AsyncStorage.setItem('engibot_lang', langId);
+  };
+
+  // ==========================================
+  // AUTH SYSTEM (PARITY WITH WEB)
+  // ==========================================
+
+  // 1-Tap Demo Login
   const handleDemoLogin = async () => {
     setIsAuthLoading(true);
     setAuthAlert(null);
@@ -183,7 +358,7 @@ export default function App() {
         setUser(data);
         return;
       }
-      // If demo user doesn't exist yet, auto-register it
+      // Auto-register demo account
       const regRes = await fetch(`${apiUrl}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -193,7 +368,10 @@ export default function App() {
           dob: '2001-01-01',
           phone_number: '9999999999',
           username: 'demo',
-          password: 'demo123'
+          password: 'demo123',
+          discipline: 'general',
+          role: 'student',
+          preferred_mode: 'learn'
         })
       });
       if (regRes.ok) {
@@ -205,14 +383,15 @@ export default function App() {
         throw new Error(regData.detail || 'Demo login failed');
       }
     } catch {
-      // Local fallback mock user for offline demo
+      // Offline fallback mock user
       const mockUser = {
         id: 9999,
         username: 'demo',
         name: 'Demo Student',
         email: 'demo@engibot.local',
         discipline: 'general',
-        role: 'student'
+        role: 'student',
+        preferred_mode: 'learn'
       };
       await AsyncStorage.setItem('chat_user', JSON.stringify(mockUser));
       setUser(mockUser);
@@ -221,34 +400,29 @@ export default function App() {
     }
   };
 
-  // Auth: Send OTP
+  // Auth: Email OTP Send
   const handleSendOtp = async () => {
     const cleanEmail = emailInput.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setAuthAlert({ type: 'error', text: 'Please enter a valid email address.' });
       return;
     }
-
     setIsAuthLoading(true);
     setAuthAlert(null);
-
     try {
       const res = await fetch(`${apiUrl}/api/otp/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to send OTP code.');
-      }
+      if (!res.ok) throw new Error(data.detail || 'Failed to send OTP code.');
 
       setOtpStep('enter-code');
       setCountdown(45);
       if (data.demo_otp) {
         setOtpInput(data.demo_otp);
-        setAuthAlert({ type: 'success', text: `Demo OTP: ${data.demo_otp} (Auto-filled)` });
+        setAuthAlert({ type: 'success', text: `Verification Code: ${data.demo_otp} (Auto-filled)` });
       } else {
         setOtpInput('');
         setAuthAlert({ type: 'success', text: `OTP code sent to ${cleanEmail}` });
@@ -260,31 +434,23 @@ export default function App() {
     }
   };
 
-  // Auth: Verify OTP
+  // Auth: Email OTP Verify
   const handleVerifyOtp = async () => {
     const cleanCode = otpInput.trim();
     if (cleanCode.length !== 6) {
       setAuthAlert({ type: 'error', text: 'Please enter the 6-digit verification code.' });
       return;
     }
-
     setIsAuthLoading(true);
     setAuthAlert(null);
-
     try {
       const res = await fetch(`${apiUrl}/api/otp/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailInput.trim().toLowerCase(),
-          otp_code: cleanCode,
-        }),
+        body: JSON.stringify({ email: emailInput.trim().toLowerCase(), otp_code: cleanCode }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Invalid or expired OTP.');
-      }
+      if (!res.ok) throw new Error(data.detail || 'Invalid or expired OTP.');
 
       await AsyncStorage.setItem('chat_user', JSON.stringify(data));
       setUser(data);
@@ -296,44 +462,126 @@ export default function App() {
     }
   };
 
-  // Auth: Password Login or Register
-  const handlePasswordAuth = async () => {
+  // Auth: Password Login
+  const handlePasswordLogin = async () => {
+    if (!usernameInput.trim() || !passwordInput.trim()) {
+      setAuthAlert({ type: 'error', text: 'Please enter username and password.' });
+      return;
+    }
     setIsAuthLoading(true);
     setAuthAlert(null);
-
     try {
-      let endpoint = '/api/login';
-      let payload = {
-        username: usernameInput.trim(),
-        password: passwordInput.trim(),
-      };
-
-      if (authMode === 'register') {
-        endpoint = '/api/register';
-        payload = {
-          name: fullNameInput.trim(),
-          email: emailInput.trim().toLowerCase(),
-          dob: dobInput.trim(),
-          phone_number: phoneInput.trim(),
-          username: usernameInput.trim(),
-          password: passwordInput.trim(),
-        };
-      }
-
-      const res = await fetch(`${apiUrl}${endpoint}`, {
+      const res = await fetch(`${apiUrl}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ username: usernameInput.trim(), password: passwordInput.trim() }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Authentication failed.');
-      }
+      if (!res.ok) throw new Error(data.detail || 'Invalid credentials.');
 
       await AsyncStorage.setItem('chat_user', JSON.stringify(data));
       setUser(data);
       setAuthAlert(null);
+    } catch (err) {
+      setAuthAlert({ type: 'error', text: err.message });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Auth: Register Account
+  const handleRegister = async () => {
+    if (!fullNameInput.trim() || !emailInput.trim() || !usernameInput.trim() || !passwordInput.trim()) {
+      setAuthAlert({ type: 'error', text: 'Please fill out all required registration fields.' });
+      return;
+    }
+    setIsAuthLoading(true);
+    setAuthAlert(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fullNameInput.trim(),
+          email: emailInput.trim().toLowerCase(),
+          dob: dobInput.trim(),
+          phone_number: phoneInput.trim() || '9999999999',
+          username: usernameInput.trim(),
+          password: passwordInput.trim(),
+          semester: regSemester,
+          discipline: regDiscipline,
+          preferred_mode: 'learn'
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Registration failed.');
+
+      await AsyncStorage.setItem('chat_user', JSON.stringify(data));
+      setUser(data);
+      setAuthAlert(null);
+    } catch (err) {
+      setAuthAlert({ type: 'error', text: err.message });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Auth: Forgot Password Request OTP
+  const handleForgotSendOtp = async () => {
+    const cleanEmail = emailInput.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAuthAlert({ type: 'error', text: 'Enter registered email address.' });
+      return;
+    }
+    setIsAuthLoading(true);
+    setAuthAlert(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/forgot-password/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to send reset code.');
+      setForgotStep('reset-password');
+      setCountdown(45);
+      if (data.demo_otp) {
+        setOtpInput(data.demo_otp);
+        setAuthAlert({ type: 'success', text: `Reset Code: ${data.demo_otp} (Auto-filled)` });
+      } else {
+        setOtpInput('');
+        setAuthAlert({ type: 'success', text: `Reset OTP sent to ${cleanEmail}` });
+      }
+    } catch (err) {
+      setAuthAlert({ type: 'error', text: err.message });
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Auth: Forgot Password Reset
+  const handleForgotReset = async () => {
+    if (!otpInput.trim() || !newPasswordInput.trim()) {
+      setAuthAlert({ type: 'error', text: 'Enter verification code and new password.' });
+      return;
+    }
+    setIsAuthLoading(true);
+    setAuthAlert(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/forgot-password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: emailInput.trim().toLowerCase(),
+          otp_code: otpInput.trim(),
+          new_password: newPasswordInput.trim()
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Reset failed.');
+      setAuthAlert({ type: 'success', text: 'Password reset successful! Please sign in.' });
+      setAuthMode('login');
+      setPasswordInput(newPasswordInput);
     } catch (err) {
       setAuthAlert({ type: 'error', text: err.message });
     } finally {
@@ -351,6 +599,7 @@ export default function App() {
           await AsyncStorage.removeItem('chat_user');
           setUser(null);
           setMessages([]);
+          setCurrentConversationId(null);
           setDrawerVisible(false);
           setOtpStep('enter-email');
           setOtpInput('');
@@ -364,10 +613,13 @@ export default function App() {
     setMessages([]);
     setInputMessage('');
     setSelectedAttachment(null);
+    setCurrentConversationId(null);
     setDrawerVisible(false);
   };
 
-  // File picking on web or preset
+  // ==========================================
+  // CHAT & ATTACHMENT PIPELINE
+  // ==========================================
   const handlePickFileWeb = (accept = 'image/*') => {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
@@ -397,24 +649,12 @@ export default function App() {
     } else {
       Alert.alert(
         'Upload File',
-        'Select a sample engineering diagram below or paste an image URL.',
+        'Choose a sample diagram preset or enter prompt to generate CAD diagram.',
         [{ text: 'OK' }]
       );
     }
   };
 
-  const handleSelectPreset = (name, type, url) => {
-    setSelectedAttachment({
-      name,
-      type,
-      url,
-      size: 10240,
-      dataBase64: null
-    });
-    setToolsModalVisible(false);
-  };
-
-  // Send Message (ChatGPT Style)
   const handleSendMessage = async (customText = null) => {
     const textToSend = typeof customText === 'string' ? customText : inputMessage;
     const text = textToSend.trim() || (selectedAttachment ? `Attached ${selectedAttachment.type}: ${selectedAttachment.name}` : '');
@@ -480,9 +720,14 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: user?.id || 1,
+          conversation_id: currentConversationId,
           message: text,
           discipline: activeDiscipline.id,
           system_instruction: activeDiscipline.prompt,
+          mode: mode,
+          language: language,
+          model_provider: selectedModel,
+          model: selectedModel,
           attachment_url: fileUrl,
           attachment_type: fileType,
           file_name: fileName,
@@ -491,13 +736,16 @@ export default function App() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to fetch AI response.');
+      if (!res.ok) throw new Error(data.detail || 'Failed to fetch AI response.');
+
+      if (data.conversation_id && !currentConversationId) {
+        setCurrentConversationId(data.conversation_id);
       }
 
       const aiMessage = {
         role: 'ai',
         content: data.response,
+        model_used: data.model_used,
         attachment_url: data.attachment_url,
         attachment_type: data.attachment_type,
         file_name: data.file_name
@@ -508,10 +756,7 @@ export default function App() {
       const errText = isNetErr
         ? `Could not reach backend at ${apiUrl}. Switch to Cloud Server (Render) in Server Settings.`
         : (err.message || 'Error generating response.');
-      setMessages((prev) => [
-        ...prev,
-        { role: 'ai', content: errText },
-      ]);
+      setMessages((prev) => [...prev, { role: 'ai', content: errText }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -521,6 +766,122 @@ export default function App() {
     setCopiedId(index);
     setTimeout(() => setCopiedId(null), 2000);
     Alert.alert('Copied to clipboard', 'Response text copied.');
+  };
+
+  // ==========================================
+  // DETERMINISTIC CALCULATORS RUNNER
+  // ==========================================
+  const handleRunCalculator = async () => {
+    setCalcLoading(true);
+    setCalcResult(null);
+    try {
+      let endpoint = '';
+      let payload = { user_id: user?.id, conversation_id: currentConversationId };
+
+      if (calcTab === 'civil') {
+        endpoint = '/api/calculators/beam-bending';
+        payload = { ...payload, beam_type: beamType, load_type: beamLoadType, span_m: parseFloat(beamSpan), load_val: parseFloat(beamLoad) };
+      } else if (calcTab === 'eee') {
+        endpoint = '/api/calculators/cable-sizing';
+        payload = { ...payload, power_kw: parseFloat(cableKw), voltage_v: parseFloat(cableVolt), length_m: parseFloat(cableLen) };
+      } else if (calcTab === 'ece') {
+        endpoint = '/api/calculators/circuit-analysis';
+        payload = { ...payload, circuit_mode: 'series', resistance_ohms: parseFloat(circR), inductance_mh: parseFloat(circL), capacitance_uf: parseFloat(circC) };
+      } else if (calcTab === 'cse') {
+        endpoint = '/api/calculators/algo-complexity';
+        payload = { ...payload, algorithm: 'quicksort', raw_array: '64, 34, 25, 12, 22, 11, 90' };
+      } else if (calcTab === 'mech') {
+        endpoint = '/api/calculators/stress-strain';
+        payload = { ...payload, force_kn: parseFloat(stressForce), shape: 'circular_bar', dim1_mm: parseFloat(stressDim1), yield_strength_mpa: parseFloat(stressYield) };
+      } else if (calcTab === 'general') {
+        endpoint = '/api/calculators/unit-converter';
+        payload = { category: unitCategory, value: parseFloat(unitVal), from_unit: unitFrom, to_unit: unitTo };
+      }
+
+      const res = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Calculation failed');
+      setCalcResult(data);
+    } catch (err) {
+      Alert.alert('Calculation Error', err.message);
+    } finally {
+      setCalcLoading(false);
+    }
+  };
+
+  // ==========================================
+  // EXAM PREP RUNNER
+  // ==========================================
+  const handleRunExamPrep = async () => {
+    setExamLoading(true);
+    setExamResult(null);
+    try {
+      let endpoint = '/api/exam/pyq';
+      let payload = { discipline: activeDiscipline.id, university: 'BPUT', semester: 5, subject: examTopic };
+
+      if (examTab === 'quiz') {
+        endpoint = '/api/exam/quiz';
+        payload = { discipline: activeDiscipline.id, topic: examTopic, num_questions: 5 };
+      } else if (examTab === 'flashcards') {
+        endpoint = '/api/exam/flashcards';
+        payload = { discipline: activeDiscipline.id, topic: examTopic };
+      }
+
+      const res = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Exam generation failed');
+      setExamResult(data.pyq_content || data.quiz_content || data.flashcards_content);
+    } catch (err) {
+      Alert.alert('Exam Prep Error', err.message);
+    } finally {
+      setExamLoading(false);
+    }
+  };
+
+  // ==========================================
+  // AI DIAGRAM & SCHEMATIC RUNNER
+  // ==========================================
+  const handleGenerateDiagram = async () => {
+    if (!diagramPrompt.trim()) return;
+    setDiagramLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/api/image/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: diagramPrompt,
+          style: diagramStyle,
+          discipline: activeDiscipline.id,
+          research_model: selectedModel,
+          user_id: user?.id,
+          conversation_id: currentConversationId
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Diagram generation failed');
+
+      setDiagramModalVisible(false);
+      const aiMsg = {
+        role: 'ai',
+        content: `### Generated Engineering Schematic\n**Prompt:** ${diagramPrompt}\n**Style:** ${diagramStyle.toUpperCase()} • **Discipline:** ${activeDiscipline.name}`,
+        attachment_url: data.image_url,
+        attachment_type: 'image',
+        file_name: data.file_name
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      Alert.alert('Diagram Error', err.message);
+    } finally {
+      setDiagramLoading(false);
+    }
   };
 
   const handleSaveApiUrl = async () => {
@@ -539,8 +900,10 @@ export default function App() {
     );
   }
 
+  const currentModelConfig = MODEL_OPTIONS.find((m) => m.id === selectedModel) || MODEL_OPTIONS[0];
+
   // ==========================================
-  // 1. CHATGPT-STYLE AUTHENTICATION SCREEN
+  // AUTH SCREEN (PARITY WITH WEB)
   // ==========================================
   if (!user) {
     return (
@@ -556,7 +919,7 @@ export default function App() {
               </View>
               <Text style={[styles.brandTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>EngiBot</Text>
               <Text style={[styles.brandSubtitle, { color: isDark ? '#9ca3af' : '#6b7280' }]}>
-                Next-generation AI for engineering minds
+                AI Engineering Assistant & Deterministic Calculation Suite
               </Text>
             </View>
 
@@ -575,11 +938,11 @@ export default function App() {
 
             <View style={styles.dividerRow}>
               <View style={[styles.dividerLine, { backgroundColor: isDark ? '#333' : '#e5e5e5' }]} />
-              <Text style={[styles.dividerText, { color: isDark ? '#737373' : '#9ca3af' }]}>OR CONTINUE WITH</Text>
+              <Text style={[styles.dividerText, { color: isDark ? '#737373' : '#9ca3af' }]}>OR SIGN IN</Text>
               <View style={[styles.dividerLine, { backgroundColor: isDark ? '#333' : '#e5e5e5' }]} />
             </View>
 
-            {/* Auth Mode Switcher */}
+            {/* Auth Mode Tabs (Email OTP | Password | Register) */}
             <View style={[styles.authTabPill, { backgroundColor: isDark ? '#2f2f2f' : '#f4f4f4' }]}>
               <TouchableOpacity
                 style={[styles.authTabOption, authMode === 'otp' && (isDark ? styles.authTabActiveDark : styles.authTabActiveLight)]}
@@ -588,10 +951,10 @@ export default function App() {
                 <Text style={[styles.authTabText, authMode === 'otp' ? (isDark ? styles.textWhite : styles.textBlack) : styles.textMuted]}>Email OTP</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.authTabOption, authMode === 'password' && (isDark ? styles.authTabActiveDark : styles.authTabActiveLight)]}
-                onPress={() => { setAuthMode('password'); setAuthAlert(null); }}
+                style={[styles.authTabOption, authMode === 'login' && (isDark ? styles.authTabActiveDark : styles.authTabActiveLight)]}
+                onPress={() => { setAuthMode('login'); setAuthAlert(null); }}
               >
-                <Text style={[styles.authTabText, authMode === 'password' ? (isDark ? styles.textWhite : styles.textBlack) : styles.textMuted]}>Password</Text>
+                <Text style={[styles.authTabText, authMode === 'login' ? (isDark ? styles.textWhite : styles.textBlack) : styles.textMuted]}>Password</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.authTabOption, authMode === 'register' && (isDark ? styles.authTabActiveDark : styles.authTabActiveLight)]}
@@ -601,7 +964,7 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* Alert Message */}
+            {/* Alert Box */}
             {authAlert && (
               <View style={[styles.alertBox, authAlert.type === 'error' ? styles.alertError : styles.alertSuccess]}>
                 <Ionicons name={authAlert.type === 'error' ? 'alert-circle' : 'checkmark-circle'} size={18} color={authAlert.type === 'error' ? '#ef4444' : '#22c55e'} />
@@ -609,26 +972,22 @@ export default function App() {
               </View>
             )}
 
-            {/* Auth Fields */}
+            {/* Email OTP Flow */}
             {authMode === 'otp' && (
               <View>
                 {otpStep === 'enter-email' ? (
                   <>
                     <TextInput
                       style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
-                      placeholder="Email address"
+                      placeholder="Student or Faculty Email"
                       placeholderTextColor={isDark ? '#888' : '#aaa'}
                       value={emailInput}
                       onChangeText={setEmailInput}
                       keyboardType="email-address"
                       autoCapitalize="none"
                     />
-                    <TouchableOpacity
-                      style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
-                      onPress={handleSendOtp}
-                      disabled={isAuthLoading}
-                    >
-                      {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Continue</Text>}
+                    <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handleSendOtp} disabled={isAuthLoading}>
+                      {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Send OTP Code</Text>}
                     </TouchableOpacity>
                   </>
                 ) : (
@@ -642,11 +1001,7 @@ export default function App() {
                       keyboardType="number-pad"
                       maxLength={6}
                     />
-                    <TouchableOpacity
-                      style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
-                      onPress={handleVerifyOtp}
-                      disabled={isAuthLoading}
-                    >
+                    <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handleVerifyOtp} disabled={isAuthLoading}>
                       {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Verify & Sign In</Text>}
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => setOtpStep('enter-email')} style={{ alignSelf: 'center', marginTop: 12 }}>
@@ -657,20 +1012,12 @@ export default function App() {
               </View>
             )}
 
-            {(authMode === 'password' || authMode === 'register') && (
+            {/* Password Login Flow */}
+            {authMode === 'login' && (
               <View>
-                {authMode === 'register' && (
-                  <TextInput
-                    style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
-                    placeholder="Full name"
-                    placeholderTextColor={isDark ? '#888' : '#aaa'}
-                    value={fullNameInput}
-                    onChangeText={setFullNameInput}
-                  />
-                )}
                 <TextInput
                   style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
-                  placeholder={authMode === 'register' ? 'Choose username' : 'Username or email'}
+                  placeholder="Username or Email"
                   placeholderTextColor={isDark ? '#888' : '#aaa'}
                   value={usernameInput}
                   onChangeText={setUsernameInput}
@@ -684,12 +1031,116 @@ export default function App() {
                   onChangeText={setPasswordInput}
                   secureTextEntry
                 />
-                <TouchableOpacity
-                  style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
-                  onPress={handlePasswordAuth}
-                  disabled={isAuthLoading}
-                >
-                  {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>{authMode === 'register' ? 'Create Account' : 'Sign In'}</Text>}
+                <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handlePasswordLogin} disabled={isAuthLoading}>
+                  {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Sign In</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setAuthMode('forgot'); setForgotStep('request-otp'); setAuthAlert(null); }} style={{ alignSelf: 'center', marginTop: 14 }}>
+                  <Text style={{ color: isDark ? '#9ca3af' : '#6b7280', fontSize: 13 }}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Register Flow (Full Parity with Web) */}
+            {authMode === 'register' && (
+              <View>
+                <TextInput
+                  style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                  placeholder="Full Name *"
+                  placeholderTextColor={isDark ? '#888' : '#aaa'}
+                  value={fullNameInput}
+                  onChangeText={setFullNameInput}
+                />
+                <TextInput
+                  style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                  placeholder="Email Address *"
+                  placeholderTextColor={isDark ? '#888' : '#aaa'}
+                  value={emailInput}
+                  onChangeText={setEmailInput}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                  placeholder="Username *"
+                  placeholderTextColor={isDark ? '#888' : '#aaa'}
+                  value={usernameInput}
+                  onChangeText={setUsernameInput}
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                  placeholder="Password *"
+                  placeholderTextColor={isDark ? '#888' : '#aaa'}
+                  value={passwordInput}
+                  onChangeText={setPasswordInput}
+                  secureTextEntry
+                />
+
+                {/* Discipline Selector Chips */}
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12, marginBottom: 8, marginTop: 4 }}>Select Engineering Branch:</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                  {DISCIPLINES.map((d) => (
+                    <TouchableOpacity
+                      key={d.id}
+                      style={[styles.presetChipBtn, { backgroundColor: regDiscipline === d.id ? (isDark ? '#fff' : '#000') : (isDark ? '#333' : '#e5e5e5') }]}
+                      onPress={() => setRegDiscipline(d.id)}
+                    >
+                      <Text style={[styles.presetChipText, { color: regDiscipline === d.id ? (isDark ? '#000' : '#fff') : (isDark ? '#aaa' : '#555') }]}>
+                        {d.short}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handleRegister} disabled={isAuthLoading}>
+                  {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Complete Registration</Text>}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Forgot Password Flow */}
+            {authMode === 'forgot' && (
+              <View>
+                {forgotStep === 'request-otp' ? (
+                  <>
+                    <TextInput
+                      style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                      placeholder="Registered Email"
+                      placeholderTextColor={isDark ? '#888' : '#aaa'}
+                      value={emailInput}
+                      onChangeText={setEmailInput}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handleForgotSendOtp} disabled={isAuthLoading}>
+                      {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Send Reset Code</Text>}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TextInput
+                      style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5', letterSpacing: 4, textAlign: 'center' }]}
+                      placeholder="6-digit reset code"
+                      placeholderTextColor={isDark ? '#888' : '#aaa'}
+                      value={otpInput}
+                      onChangeText={setOtpInput}
+                      keyboardType="number-pad"
+                    />
+                    <TextInput
+                      style={[styles.gptInput, { backgroundColor: isDark ? '#2f2f2f' : '#f9f9f9', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#424242' : '#e5e5e5' }]}
+                      placeholder="Enter new password"
+                      placeholderTextColor={isDark ? '#888' : '#aaa'}
+                      value={newPasswordInput}
+                      onChangeText={setNewPasswordInput}
+                      secureTextEntry
+                    />
+                    <TouchableOpacity style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]} onPress={handleForgotReset} disabled={isAuthLoading}>
+                      {isAuthLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Set New Password</Text>}
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity onPress={() => { setAuthMode('login'); setAuthAlert(null); }} style={{ alignSelf: 'center', marginTop: 14 }}>
+                  <Text style={{ color: isDark ? '#9ca3af' : '#6b7280', fontSize: 13 }}>Back to sign in</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -710,7 +1161,7 @@ export default function App() {
           <View style={styles.modalBackdrop}>
             <View style={[styles.modalBox, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
               <Text style={[styles.modalHeader, { color: isDark ? '#fff' : '#000' }]}>Server Connection</Text>
-              <Text style={[styles.modalSub, { color: isDark ? '#9ca3af' : '#6b7280' }]}>Select or enter your backend API URL:</Text>
+              <Text style={[styles.modalSub, { color: isDark ? '#9ca3af' : '#6b7280' }]}>Select or enter backend API URL:</Text>
 
               <TextInput
                 style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
@@ -747,13 +1198,13 @@ export default function App() {
   }
 
   // ==========================================
-  // 2. MAIN CHATGPT-STYLE WORKSPACE
+  // MAIN WORKSPACE (CHATGPT MOBILE ERGONOMICS)
   // ==========================================
   return (
     <SafeAreaView style={[styles.mainWorkspace, { backgroundColor: isDark ? '#212121' : '#ffffff' }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#212121' : '#ffffff'} />
 
-      {/* Top ChatGPT Minimalist Navigation Bar */}
+      {/* Top Navigation Bar */}
       <View style={[styles.chatGptHeader, { borderBottomColor: isDark ? '#2f2f2f' : '#f0f0f0' }]}>
         
         {/* Left: Sidebar Hamburger Menu */}
@@ -761,24 +1212,34 @@ export default function App() {
           <Ionicons name="menu-outline" size={26} color={isDark ? '#ffffff' : '#0d0d0d'} />
         </TouchableOpacity>
 
-        {/* Center: Model / Discipline Dropdown Pill */}
+        {/* Center: Model Selector Pill */}
         <TouchableOpacity
           style={[styles.modelDropdownPill, { backgroundColor: isDark ? '#2f2f2f' : '#f4f4f4' }]}
           onPress={() => setModelPickerVisible(true)}
         >
           <Text style={[styles.modelDropdownTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>
-            {activeDiscipline.modelName}
+            {currentModelConfig.shortName}
           </Text>
           <Ionicons name="chevron-down" size={14} color={isDark ? '#9ca3af' : '#6b7280'} />
         </TouchableOpacity>
 
-        {/* Right: New Chat Pen Icon */}
+        {/* Mode Switcher Pill (Learn vs Work) */}
+        <TouchableOpacity
+          style={[styles.modeTogglePill, { backgroundColor: mode === 'learn' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)' }]}
+          onPress={toggleMode}
+        >
+          <Text style={[styles.modeToggleText, { color: mode === 'learn' ? '#3b82f6' : '#10b981' }]}>
+            {mode === 'learn' ? '🎓 Learn' : '💼 Work'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Right: New Chat Pen */}
         <TouchableOpacity style={styles.headerIconBtn} onPress={handleNewChat}>
           <Ionicons name="create-outline" size={24} color={isDark ? '#ffffff' : '#0d0d0d'} />
         </TouchableOpacity>
       </View>
 
-      {/* Messages Stream */}
+      {/* Messages Feed */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -791,21 +1252,21 @@ export default function App() {
               <Ionicons name="sparkles" size={32} color={isDark ? '#ffffff' : '#0d0d0d'} />
             </View>
             <Text style={[styles.emptyGreeting, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>
-              What can I help you engineer?
+              {activeDiscipline.name}
             </Text>
             <Text style={[styles.emptySubtext, { color: isDark ? '#9ca3af' : '#6b7280' }]}>
-              Formulas, calculations, code architectures, or schematics.
+              Running on {currentModelConfig.name} in {mode.toUpperCase()} mode.
             </Text>
 
-            {/* Suggestion Cards Grid (ChatGPT Signature) */}
+            {/* Suggestion Cards */}
             <View style={styles.suggestionGrid}>
               {SUGGESTIONS.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   style={[styles.suggestionCard, { backgroundColor: isDark ? '#2a2a2a' : '#f9f9f9', borderColor: isDark ? '#383838' : '#e5e5e5' }]}
                   onPress={() => {
-                    const matchedDiscipline = DISCIPLINES.find(d => d.id === item.branch) || DISCIPLINES[0];
-                    setActiveDiscipline(matchedDiscipline);
+                    const matched = DISCIPLINES.find((d) => d.id === item.branch) || DISCIPLINES[0];
+                    setActiveDiscipline(matched);
                     handleSendMessage(item.prompt);
                   }}
                 >
@@ -843,7 +1304,7 @@ export default function App() {
             );
           }
 
-          // Assistant Message (ChatGPT style: flush left, no bulky bubble, clean typography)
+          // Assistant Response
           return (
             <View style={styles.aiMessageRow}>
               <View style={styles.aiMessageHeader}>
@@ -851,7 +1312,7 @@ export default function App() {
                   <Ionicons name="sparkles" size={14} color={isDark ? '#fff' : '#000'} />
                 </View>
                 <Text style={[styles.aiSenderLabel, { color: isDark ? '#9ca3af' : '#6b7280' }]}>
-                  EngiBot
+                  EngiBot {item.model_used ? `• ${item.model_used}` : ''}
                 </Text>
               </View>
 
@@ -863,7 +1324,7 @@ export default function App() {
                 {item.content}
               </Text>
 
-              {/* Action Toolbar Below Response (Copy, Thumbs, Read Aloud) */}
+              {/* Action Toolbar */}
               <View style={styles.aiActionRow}>
                 <TouchableOpacity style={styles.aiActionBtn} onPress={() => handleCopyMessage(item.content, index)}>
                   <Ionicons
@@ -878,7 +1339,7 @@ export default function App() {
                 <TouchableOpacity style={styles.aiActionBtn} onPress={() => Alert.alert('Feedback', 'We appreciate your feedback.')}>
                   <Ionicons name="thumbs-down-outline" size={16} color={isDark ? '#888' : '#666'} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.aiActionBtn} onPress={() => handleSendMessage(`Please elaborate and explain further: ${messages[index - 1]?.content || ''}`)}>
+                <TouchableOpacity style={styles.aiActionBtn} onPress={() => handleSendMessage(`Elaborate further: ${messages[index - 1]?.content || ''}`)}>
                   <Ionicons name="reload-outline" size={16} color={isDark ? '#888' : '#666'} />
                 </TouchableOpacity>
               </View>
@@ -893,7 +1354,7 @@ export default function App() {
               </View>
               <View style={styles.thinkingDots}>
                 <ActivityIndicator size="small" color={isDark ? '#fff' : '#000'} />
-                <Text style={[styles.thinkingText, { color: isDark ? '#9ca3af' : '#6b7280' }]}>Thinking...</Text>
+                <Text style={[styles.thinkingText, { color: isDark ? '#9ca3af' : '#6b7280' }]}>Thinking with {currentModelConfig.shortName}...</Text>
               </View>
             </View>
           ) : null
@@ -918,22 +1379,22 @@ export default function App() {
         <View style={styles.bottomBarContainer}>
           <View style={[styles.floatingInputPill, { backgroundColor: isDark ? '#2f2f2f' : '#f4f4f4', borderColor: isDark ? '#3d3d3d' : '#e5e5e5' }]}>
             
-            {/* Left: Plus Menu for Attachments & Calculators */}
+            {/* Left: Plus Action Menu */}
             <TouchableOpacity style={styles.inputPlusBtn} onPress={() => setToolsModalVisible(true)}>
               <Ionicons name="add" size={24} color={isDark ? '#ffffff' : '#0d0d0d'} />
             </TouchableOpacity>
 
-            {/* Center: Multiline Input */}
+            {/* Center: Input Text */}
             <TextInput
               style={[styles.floatingTextInput, { color: isDark ? '#ffffff' : '#0d0d0d' }]}
-              placeholder={`Message ${activeDiscipline.modelName}...`}
+              placeholder={`Ask ${activeDiscipline.short}...`}
               placeholderTextColor={isDark ? '#888888' : '#9ca3af'}
               value={inputMessage}
               onChangeText={setInputMessage}
               multiline
             />
 
-            {/* Right: Circular Send Button or Voice Icon */}
+            {/* Right: Circular Send Button */}
             {inputMessage.trim() || selectedAttachment ? (
               <TouchableOpacity
                 style={[styles.circularSendBtn, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
@@ -947,8 +1408,8 @@ export default function App() {
                 )}
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.circularSendBtnDisabled} onPress={() => Alert.alert('Voice Mode', 'Voice input is currently supported on web via Web Speech API.')}>
-                <Ionicons name="mic-outline" size={22} color={isDark ? '#888888' : '#9ca3af'} />
+              <TouchableOpacity style={styles.circularSendBtnDisabled} onPress={() => Alert.alert('Language', `Active response language: ${language.toUpperCase()}. Change in menu.`)}>
+                <Ionicons name="language-outline" size={20} color={isDark ? '#888888' : '#9ca3af'} />
               </TouchableOpacity>
             )}
           </View>
@@ -956,14 +1417,14 @@ export default function App() {
       </KeyboardAvoidingView>
 
       {/* ================================================== */}
-      {/* 3. CHATGPT SIDEBAR DRAWER (History & Preferences) */}
+      {/* SIDEBAR DRAWER (History & Controls)                */}
       {/* ================================================== */}
       <Modal visible={drawerVisible} transparent animationType="fade">
         <View style={styles.drawerBackdrop}>
           <TouchableOpacity style={styles.drawerOutsideTouch} onPress={() => setDrawerVisible(false)} />
           <View style={[styles.drawerPanel, { backgroundColor: isDark ? '#171717' : '#ffffff' }]}>
             
-            {/* Drawer Header */}
+            {/* Drawer Top Action */}
             <View style={styles.drawerTop}>
               <TouchableOpacity style={[styles.newChatDrawerBtn, { backgroundColor: isDark ? '#262626' : '#f4f4f4' }]} onPress={handleNewChat}>
                 <Ionicons name="add-circle-outline" size={20} color={isDark ? '#fff' : '#000'} />
@@ -974,17 +1435,29 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* Past Chats Section */}
-            <Text style={[styles.drawerSectionLabel, { color: isDark ? '#737373' : '#9ca3af' }]}>RECENT CHATS</Text>
+            {/* Quick Switchers: Discipline & Language */}
+            <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+              <TouchableOpacity
+                style={[styles.drawerQuickBtn, { backgroundColor: isDark ? '#262626' : '#f4f4f4' }]}
+                onPress={() => { setDrawerVisible(false); setDisciplinePickerVisible(true); }}
+              >
+                <Ionicons name="school-outline" size={18} color={isDark ? '#fff' : '#000'} />
+                <Text style={[styles.drawerQuickText, { color: isDark ? '#fff' : '#000' }]}>{activeDiscipline.name}</Text>
+                <Ionicons name="chevron-forward" size={14} color="#888" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Past Conversations List */}
+            <Text style={[styles.drawerSectionLabel, { color: isDark ? '#737373' : '#9ca3af' }]}>RECENT SESSIONS</Text>
             <ScrollView style={{ flex: 1 }}>
               {conversations.length > 0 ? (
                 conversations.map((c) => (
                   <TouchableOpacity
                     key={c.id}
-                    style={[styles.drawerChatItem, { backgroundColor: isDark ? '#212121' : '#f9f9f9' }]}
+                    style={[styles.drawerChatItem, { backgroundColor: currentConversationId === c.id ? (isDark ? '#333' : '#e5e5e5') : (isDark ? '#212121' : '#f9f9f9') }]}
                     onPress={() => {
+                      setCurrentConversationId(c.id);
                       setDrawerVisible(false);
-                      // load messages if needed
                     }}
                   >
                     <Ionicons name="chatbubble-ellipses-outline" size={16} color={isDark ? '#9ca3af' : '#6b7280'} />
@@ -994,13 +1467,31 @@ export default function App() {
                   </TouchableOpacity>
                 ))
               ) : (
-                <View style={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                  <Text style={{ color: isDark ? '#737373' : '#9ca3af', fontSize: 13 }}>No past conversations saved.</Text>
+                <View style={{ paddingVertical: 16, paddingHorizontal: 16 }}>
+                  <Text style={{ color: isDark ? '#737373' : '#9ca3af', fontSize: 13 }}>No saved sessions.</Text>
                 </View>
               )}
             </ScrollView>
 
-            {/* Bottom User Profile Section */}
+            {/* Language Selector Row */}
+            <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: isDark ? '#262626' : '#f0f0f0' }}>
+              <Text style={{ color: isDark ? '#737373' : '#9ca3af', fontSize: 11, fontWeight: '700', marginBottom: 6 }}>LANGUAGE</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {LANGUAGES.map((l) => (
+                  <TouchableOpacity
+                    key={l.id}
+                    style={[styles.presetChipBtn, { backgroundColor: language === l.id ? (isDark ? '#fff' : '#000') : (isDark ? '#262626' : '#e5e5e5') }]}
+                    onPress={() => handleSelectLanguage(l.id)}
+                  >
+                    <Text style={[styles.presetChipText, { color: language === l.id ? (isDark ? '#000' : '#fff') : (isDark ? '#aaa' : '#555') }]}>
+                      {l.id.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Bottom Profile Row */}
             <View style={[styles.drawerBottomSection, { borderTopColor: isDark ? '#262626' : '#f0f0f0' }]}>
               <View style={styles.drawerUserRow}>
                 <View style={[styles.drawerAvatar, { backgroundColor: isDark ? '#333' : '#e5e5e5' }]}>
@@ -1013,7 +1504,7 @@ export default function App() {
                     {user.name || user.username}
                   </Text>
                   <Text style={{ color: isDark ? '#888' : '#888', fontSize: 11 }}>
-                    {user.discipline?.toUpperCase() || 'STUDENT'}
+                    {user.discipline?.toUpperCase() || 'STUDENT'} • {mode.toUpperCase()}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={toggleTheme} style={{ padding: 6 }}>
@@ -1033,113 +1524,386 @@ export default function App() {
       </Modal>
 
       {/* ================================================== */}
-      {/* 4. MODEL / DISCIPLINE PICKER BOTTOM SHEET          */}
+      {/* MODEL SELECTOR BOTTOM SHEET (ALL 7 WEB MODELS)     */}
       {/* ================================================== */}
       <Modal visible={modelPickerVisible} transparent animationType="slide">
         <View style={styles.sheetBackdrop}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setModelPickerVisible(false)} />
           <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
             <View style={styles.sheetHandle} />
-            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Select Engineering Discipline</Text>
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Select AI Engine</Text>
             <Text style={[styles.sheetDesc, { color: isDark ? '#9ca3af' : '#6b7280' }]}>
-              Each model is pre-prompted with specific engineering domain codes and standards.
+              Choose from 7 specialized models. Switch anytime per query.
             </Text>
 
-            {DISCIPLINES.map((d) => {
-              const isSelected = activeDiscipline.id === d.id;
-              return (
-                <TouchableOpacity
-                  key={d.id}
-                  style={[
-                    styles.disciplineRowItem,
-                    { backgroundColor: isSelected ? (isDark ? '#333333' : '#f0f0f0') : 'transparent' }
-                  ]}
-                  onPress={() => {
-                    setActiveDiscipline(d);
-                    setModelPickerVisible(false);
-                  }}
-                >
-                  <View style={[styles.disciplineRowIcon, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4' }]}>
-                    <Ionicons name={d.icon} size={20} color={isDark ? '#ffffff' : '#0d0d0d'} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.disciplineRowName, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>{d.modelName}</Text>
-                    <Text style={{ color: isDark ? '#888888' : '#6b7280', fontSize: 12 }}>{d.name}</Text>
-                  </View>
-                  {isSelected && <Ionicons name="checkmark" size={20} color={isDark ? '#ffffff' : '#0d0d0d'} />}
-                </TouchableOpacity>
-              );
-            })}
+            <ScrollView style={{ maxHeight: 380 }}>
+              {MODEL_OPTIONS.map((m) => {
+                const isSelected = selectedModel === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.modelRowItem, { backgroundColor: isSelected ? (isDark ? '#333333' : '#f0f0f0') : 'transparent' }]}
+                    onPress={() => handleSelectModel(m.id)}
+                  >
+                    <View style={[styles.modelRowIcon, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4' }]}>
+                      <Ionicons name={m.icon} size={20} color={m.color} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.modelRowName, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>{m.name}</Text>
+                      </View>
+                      <Text style={{ color: m.color, fontSize: 11, fontWeight: '700', marginTop: 1 }}>{m.badge}</Text>
+                      <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12, marginTop: 2 }}>{m.desc}</Text>
+                    </View>
+                    {isSelected && <Ionicons name="checkmark" size={20} color={isDark ? '#ffffff' : '#0d0d0d'} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
       {/* ================================================== */}
-      {/* 5. TOOLS & ATTACHMENTS ACTION SHEET (+)            */}
+      {/* DISCIPLINE SELECTOR BOTTOM SHEET                   */}
+      {/* ================================================== */}
+      <Modal visible={disciplinePickerVisible} transparent animationType="slide">
+        <View style={styles.sheetBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setDisciplinePickerVisible(false)} />
+          <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Engineering Discipline</Text>
+            {DISCIPLINES.map((d) => (
+              <TouchableOpacity
+                key={d.id}
+                style={[styles.disciplineRowItem, { backgroundColor: activeDiscipline.id === d.id ? (isDark ? '#333' : '#f0f0f0') : 'transparent' }]}
+                onPress={() => { setActiveDiscipline(d); setDisciplinePickerVisible(false); }}
+              >
+                <Ionicons name={d.icon} size={20} color={isDark ? '#fff' : '#000'} />
+                <Text style={[styles.disciplineRowName, { color: isDark ? '#fff' : '#000', marginLeft: 12, flex: 1 }]}>{d.name}</Text>
+                {activeDiscipline.id === d.id && <Ionicons name="checkmark" size={20} color={isDark ? '#fff' : '#000'} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================== */}
+      {/* TOOLS & SUITE ACTION SHEET (+)                     */}
       {/* ================================================== */}
       <Modal visible={toolsModalVisible} transparent animationType="slide">
         <View style={styles.sheetBackdrop}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setToolsModalVisible(false)} />
           <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
             <View style={styles.sheetHandle} />
-            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Tools & Attachments</Text>
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Engineering Tools & Studio</Text>
 
-            <TouchableOpacity style={styles.toolActionRow} onPress={() => handlePickFileWeb('image/*')}>
+            {/* Calculators Suite */}
+            <TouchableOpacity style={styles.toolActionRow} onPress={() => { setToolsModalVisible(false); setCalcModalVisible(true); }}>
               <View style={[styles.toolActionIcon, { backgroundColor: '#3b82f6' }]}>
-                <Ionicons name="image" size={22} color="#ffffff" />
+                <Ionicons name="calculator" size={22} color="#ffffff" />
               </View>
               <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Upload Diagram / Photo</Text>
-                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Analyze circuit schematics or mechanical CAD</Text>
+                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Deterministic Calculators</Text>
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Beam Bending, Cable Sizing, Circuits & Stress</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.toolActionRow} onPress={() => handlePickFileWeb('.pdf,.doc,.docx,.txt,.csv,.json,.py')}>
-              <View style={[styles.toolActionIcon, { backgroundColor: '#10b981' }]}>
-                <Ionicons name="document-text" size={22} color="#ffffff" />
+            {/* Exam Prep Mode */}
+            <TouchableOpacity style={styles.toolActionRow} onPress={() => { setToolsModalVisible(false); setExamModalVisible(true); }}>
+              <View style={[styles.toolActionIcon, { backgroundColor: '#f59e0b' }]}>
+                <Ionicons name="school" size={22} color="#ffffff" />
               </View>
               <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Upload Document / Code</Text>
-                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>PDF assignments, lab manuals, or python code</Text>
+                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Exam Prep Suite (PYQs & Quizzes)</Text>
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>High-yield questions, MCQ practice & flashcards</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.toolActionRow}
-              onPress={() => {
-                setToolsModalVisible(false);
-                handleSendMessage('Generate a technical schematic diagram for a distributed microservices architecture.');
-              }}
-            >
+            {/* AI Technical Schematic Studio */}
+            <TouchableOpacity style={styles.toolActionRow} onPress={() => { setToolsModalVisible(false); setDiagramModalVisible(true); }}>
               <View style={[styles.toolActionIcon, { backgroundColor: '#8b5cf6' }]}>
                 <Ionicons name="color-palette" size={22} color="#ffffff" />
               </View>
               <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Render AI Technical Schematic</Text>
-                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Generate CAD isometric blueprints from prompt</Text>
+                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>AI CAD Schematic Studio</Text>
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Generate technical drawings and system blueprints</Text>
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.toolActionRow}
-              onPress={() => {
-                setToolsModalVisible(false);
-                handleSelectPreset('OpAmp_Circuit.png', 'image', 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600');
-              }}
-            >
-              <View style={[styles.toolActionIcon, { backgroundColor: '#f59e0b' }]}>
-                <Ionicons name="hardware-chip" size={22} color="#ffffff" />
+            {/* Attach Photo / File */}
+            <TouchableOpacity style={styles.toolActionRow} onPress={() => handlePickFileWeb('image/*')}>
+              <View style={[styles.toolActionIcon, { backgroundColor: '#10b981' }]}>
+                <Ionicons name="image" size={22} color="#ffffff" />
               </View>
               <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Sample Circuit Schematic</Text>
-                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Instant sample for circuit analysis demo</Text>
+                <Text style={[styles.toolActionTitle, { color: isDark ? '#fff' : '#000' }]}>Upload Diagram / Photo</Text>
+                <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12 }}>Attach schematic image for AI analysis</Text>
               </View>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Settings Modal (Global Backend Configuration) */}
+      {/* ================================================== */}
+      {/* DETERMINISTIC CALCULATORS MODAL                    */}
+      {/* ================================================== */}
+      <Modal visible={calcModalVisible} transparent animationType="slide">
+        <View style={styles.sheetBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setCalcModalVisible(false)} />
+          <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff', maxHeight: '85%' }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Engineering Calculators</Text>
+
+            {/* Calculator Branch Tabs */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              {['civil', 'eee', 'ece', 'cse', 'mech', 'general'].map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.presetChipBtn, { backgroundColor: calcTab === t ? (isDark ? '#fff' : '#000') : (isDark ? '#333' : '#e5e5e5'), marginRight: 6 }]}
+                  onPress={() => { setCalcTab(t); setCalcResult(null); }}
+                >
+                  <Text style={[styles.presetChipText, { color: calcTab === t ? (isDark ? '#000' : '#fff') : (isDark ? '#aaa' : '#555') }]}>
+                    {t.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <ScrollView style={{ maxHeight: 340 }}>
+              {calcTab === 'civil' && (
+                <View>
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Span Length (meters):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={beamSpan.toString()}
+                    onChangeText={(v) => setBeamSpan(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Load (kN):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={beamLoad.toString()}
+                    onChangeText={(v) => setBeamLoad(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              )}
+
+              {calcTab === 'eee' && (
+                <View>
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Motor Power (kW):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={cableKw.toString()}
+                    onChangeText={(v) => setCableKw(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Length of Run (meters):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={cableLen.toString()}
+                    onChangeText={(v) => setCableLen(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              )}
+
+              {calcTab === 'mech' && (
+                <View>
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Axial Force (kN):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={stressForce.toString()}
+                    onChangeText={(v) => setStressForce(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Rod Diameter (mm):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={stressDim1.toString()}
+                    onChangeText={(v) => setStressDim1(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              )}
+
+              {calcTab === 'ece' && (
+                <View>
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Resistance (Ohms):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={circR.toString()}
+                    onChangeText={(v) => setCircR(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Inductance (mH):</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={circL.toString()}
+                    onChangeText={(v) => setCircL(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              )}
+
+              {calcTab === 'cse' && (
+                <View style={{ paddingVertical: 10 }}>
+                  <Text style={{ color: isDark ? '#fff' : '#000', fontWeight: '600' }}>Algorithm Complexity Benchmarking</Text>
+                  <Text style={{ color: isDark ? '#888' : '#666', fontSize: 12, marginTop: 4 }}>
+                    Benchmarks Quicksort, Mergesort, and Heapsort with operation counts and Big-O curves.
+                  </Text>
+                </View>
+              )}
+
+              {calcTab === 'general' && (
+                <View>
+                  <Text style={{ color: isDark ? '#aaa' : '#555', fontSize: 12 }}>Value:</Text>
+                  <TextInput
+                    style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+                    value={unitVal.toString()}
+                    onChangeText={(v) => setUnitVal(parseFloat(v) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d', marginTop: 10 }]}
+                onPress={handleRunCalculator}
+                disabled={calcLoading}
+              >
+                {calcLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Run Calculation</Text>}
+              </TouchableOpacity>
+
+              {/* Formatted Result Card */}
+              {calcResult && (
+                <View style={[styles.calcResultBox, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4' }]}>
+                  <Text style={{ color: '#22c55e', fontWeight: '700', fontSize: 14 }}>{calcResult.title || 'Calculation Result'}</Text>
+                  {calcResult.standard_cited && (
+                    <Text style={{ color: isDark ? '#aaa' : '#666', fontSize: 11, marginTop: 2 }}>Standard: {calcResult.standard_cited}</Text>
+                  )}
+                  <Text style={{ color: isDark ? '#fff' : '#000', fontSize: 13, marginTop: 8 }}>
+                    {JSON.stringify(calcResult.results || calcResult, null, 2)}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.presetChipBtn, { backgroundColor: isDark ? '#333' : '#ddd', marginTop: 10, alignSelf: 'flex-start' }]}
+                    onPress={() => {
+                      setCalcModalVisible(false);
+                      handleSendMessage(`[CALCULATION: ${calcTab.toUpperCase()}]\n${JSON.stringify(calcResult.results || calcResult)}`);
+                    }}
+                  >
+                    <Text style={{ color: isDark ? '#fff' : '#000', fontSize: 12, fontWeight: '700' }}>Insert into Chat</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================== */}
+      {/* EXAM PREP SUITE MODAL (PYQs & Quizzes)             */}
+      {/* ================================================== */}
+      <Modal visible={examModalVisible} transparent animationType="slide">
+        <View style={styles.sheetBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setExamModalVisible(false)} />
+          <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff', maxHeight: '80%' }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>Exam Prep Suite</Text>
+            
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+              {['pyq', 'quiz', 'flashcards'].map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.presetChipBtn, { backgroundColor: examTab === tab ? (isDark ? '#fff' : '#000') : (isDark ? '#333' : '#e5e5e5') }]}
+                  onPress={() => { setExamTab(tab); setExamResult(null); }}
+                >
+                  <Text style={[styles.presetChipText, { color: examTab === tab ? (isDark ? '#000' : '#fff') : (isDark ? '#aaa' : '#555') }]}>
+                    {tab.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+              placeholder="Topic (e.g. Thermodynamics, Data Structures)"
+              placeholderTextColor={isDark ? '#888' : '#aaa'}
+              value={examTopic}
+              onChangeText={setExamTopic}
+            />
+
+            <TouchableOpacity
+              style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
+              onPress={handleRunExamPrep}
+              disabled={examLoading}
+            >
+              {examLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Generate Materials</Text>}
+            </TouchableOpacity>
+
+            {examResult && (
+              <ScrollView style={{ marginTop: 12, maxHeight: 180 }}>
+                <Text style={{ color: isDark ? '#ececec' : '#171717', fontSize: 13, lineHeight: 20 }}>{examResult}</Text>
+                <TouchableOpacity
+                  style={[styles.presetChipBtn, { backgroundColor: isDark ? '#333' : '#ddd', marginTop: 10, alignSelf: 'flex-start' }]}
+                  onPress={() => {
+                    setExamModalVisible(false);
+                    handleSendMessage(`[EXAM PREP: ${examTab.toUpperCase()}]\n${examResult}`);
+                  }}
+                >
+                  <Text style={{ color: isDark ? '#fff' : '#000', fontSize: 12, fontWeight: '700' }}>Insert into Chat</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================== */}
+      {/* AI SCHEMATIC STUDIO MODAL                          */}
+      {/* ================================================== */}
+      <Modal visible={diagramModalVisible} transparent animationType="slide">
+        <View style={styles.sheetBackdrop}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setDiagramModalVisible(false)} />
+          <View style={[styles.bottomSheetCard, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.sheetTitle, { color: isDark ? '#ffffff' : '#0d0d0d' }]}>AI CAD Schematic Studio</Text>
+
+            <TextInput
+              style={[styles.gptInput, { backgroundColor: isDark ? '#1f1f1f' : '#f4f4f4', color: isDark ? '#fff' : '#000', borderColor: isDark ? '#3d3d3d' : '#ddd' }]}
+              placeholder="Describe schematic (e.g. Distributed database topology)"
+              placeholderTextColor={isDark ? '#888' : '#aaa'}
+              value={diagramPrompt}
+              onChangeText={setDiagramPrompt}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+              {['schematic', 'cad', 'circuit', 'flowchart'].map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.presetChipBtn, { backgroundColor: diagramStyle === s ? (isDark ? '#fff' : '#000') : (isDark ? '#333' : '#e5e5e5') }]}
+                  onPress={() => setDiagramStyle(s)}
+                >
+                  <Text style={[styles.presetChipText, { color: diagramStyle === s ? (isDark ? '#000' : '#fff') : (isDark ? '#aaa' : '#555') }]}>
+                    {s.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.gptButton, { backgroundColor: isDark ? '#ffffff' : '#0d0d0d' }]}
+              onPress={handleGenerateDiagram}
+              disabled={diagramLoading}
+            >
+              {diagramLoading ? <ActivityIndicator color={isDark ? '#000' : '#fff'} /> : <Text style={[styles.gptButtonText, { color: isDark ? '#000' : '#fff' }]}>Render Blueprint</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Global Server Settings Modal */}
       <Modal visible={settingsVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalBox, { backgroundColor: isDark ? '#262626' : '#ffffff' }]}>
@@ -1182,7 +1946,7 @@ export default function App() {
 }
 
 // ==========================================
-// CHATGPT MODERN DESIGN SYSTEM STYLES
+// STYLES (CHATGPT MODERN DESIGN SYSTEM)
 // ==========================================
 const styles = StyleSheet.create({
   centerContainer: {
@@ -1201,7 +1965,7 @@ const styles = StyleSheet.create({
   },
   brandBox: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
   brandIconCircle: {
     width: 64,
@@ -1209,7 +1973,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   brandTitle: {
     fontSize: 28,
@@ -1217,9 +1981,10 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   brandSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     marginTop: 6,
     textAlign: 'center',
+    lineHeight: 18,
   },
   demoPill: {
     flexDirection: 'row',
@@ -1239,7 +2004,7 @@ const styles = StyleSheet.create({
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 18,
   },
   dividerLine: {
     flex: 1,
@@ -1255,7 +2020,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: 12,
     padding: 4,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   authTabOption: {
     flex: 1,
@@ -1302,16 +2067,16 @@ const styles = StyleSheet.create({
     color: '#22c55e',
   },
   gptInput: {
-    height: 50,
+    height: 48,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 16,
-    fontSize: 15,
-    marginBottom: 14,
+    fontSize: 14,
+    marginBottom: 12,
   },
   gptButton: {
-    height: 50,
-    borderRadius: 25,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 4,
@@ -1325,7 +2090,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 24,
+    marginTop: 22,
   },
   serverSettingsLinkText: {
     fontSize: 12,
@@ -1355,12 +2120,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     borderRadius: 20,
   },
   modelDropdownTitle: {
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modeTogglePill: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+  },
+  modeToggleText: {
+    fontSize: 11,
     fontWeight: '700',
   },
   chatStreamContent: {
@@ -1375,7 +2149,7 @@ const styles = StyleSheet.create({
   emptyScreenWrap: {
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginTop: 20,
+    marginTop: 10,
   },
   emptyLogoCircle: {
     width: 56,
@@ -1383,18 +2157,18 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   emptyGreeting: {
     fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   suggestionGrid: {
     width: '100%',
@@ -1449,7 +2223,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   aiSenderLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   aiMessageText: {
@@ -1503,7 +2277,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Floating Input Pill (Signature ChatGPT)
+  // Floating Input Pill
   bottomBarContainer: {
     paddingHorizontal: 12,
     paddingBottom: Platform.OS === 'ios' ? 8 : 12,
@@ -1565,7 +2339,7 @@ const styles = StyleSheet.create({
     maxWidth: 200,
   },
 
-  // Drawer (Sidebar)
+  // Drawer
   drawerBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1604,6 +2378,19 @@ const styles = StyleSheet.create({
   newChatDrawerText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  drawerQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  drawerQuickText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
   },
   drawerSectionLabel: {
     fontSize: 11,
@@ -1647,7 +2434,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Bottom Sheets (Discipline & Tools)
+  // Bottom Sheets
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1674,8 +2461,27 @@ const styles = StyleSheet.create({
   },
   sheetDesc: {
     fontSize: 13,
-    marginBottom: 16,
+    marginBottom: 14,
     lineHeight: 18,
+  },
+  modelRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  modelRowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modelRowName: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   disciplineRowItem: {
     flexDirection: 'row',
@@ -1685,15 +2491,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 4,
   },
-  disciplineRowIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   disciplineRowName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   toolActionRow: {
@@ -1713,6 +2512,11 @@ const styles = StyleSheet.create({
   toolActionTitle: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  calcResultBox: {
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 12,
   },
 
   // Modals
