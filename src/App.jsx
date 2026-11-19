@@ -21,25 +21,28 @@ const formatFileSize = (bytes) => {
 
 const cleanDisplayMessage = (text) => {
   if (!text) return ''
-  return text
+  let cleaned = text
+    .replace(/\\boxed\{([^}]+)\}/g, '$1')
+    .replace(/\\(?:mathbf|mathit|mathrm|textbf|textit|text)\{([^}]+)\}/g, '$1')
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1 / $2)')
     .replace(/\\times/g, '*')
     .replace(/\\cdot/g, '*')
     .replace(/\\div/g, '/')
     .replace(/\\sum(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*/g, 'Sum of ')
     .replace(/\\int(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*/g, 'Integral of ')
-    .replace(/\\(?:quad|qquad|left|right)\b/g, ' ')
-    .replace(/\\(?:text|mathrm|mathbf)\{([^}]+)\}/g, '$1')
+    .replace(/\\(?:quad|qquad|left|right|displaystyle)\b/g, ' ')
     .replace(/_\{([^}]+)\}/g, '_$1')
     .replace(/\^\{([^}]+)\}/g, '^$1')
-    .replace(/\{([A-Za-z0-9_]+)\}/g, '$1')
     .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
     .replace(/\\\[([\s\S]*?)\\\]/g, '$1')
     .replace(/\\\(([\s\S]*?)\\\)/g, '$1')
     .replace(/(?<!\$)\$(?!\$)(.*?)\$/g, '$1')
+    .replace(/\\[a-zA-Z]+/g, '')
+    .replace(/\{([^{}]+)\}/g, '$1')
+    .replace(/[{}]/g, '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/(?<!\*)\*(?!\*)(.*?)\*/g, '$1')
-    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
     .replace(/__(.*?)__/g, '$1')
     .replace(/__/g, '')
     .replace(/\|\|/g, ' ')
@@ -48,6 +51,33 @@ const cleanDisplayMessage = (text) => {
     .replace(/(?<!https:)(?<!http:)\/\//g, ' / ')
     .replace(/^#{1,6}\s*/gm, '')
     .replace(/\\/g, '')
+    .replace(/<br\s*\/?>/gi, ' ')
+
+  // Convert tables to clean bullet rows
+  const lines = cleaned.split('\n')
+  const cleanLines = []
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (/^\s*\|?\s*[-:]+[-| :]+\|?\s*$/.test(trimmed)) {
+      continue
+    }
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim()).filter(Boolean)
+      if (cells.length > 0) {
+        cleanLines.push(' - ' + cells.join(' : '))
+        continue
+      }
+    }
+    if (trimmed.split('|').length >= 3) {
+      const cells = trimmed.split('|').map(c => c.trim()).filter(Boolean)
+      if (cells.length > 0) {
+        cleanLines.push(' - ' + cells.join(' : '))
+        continue
+      }
+    }
+    cleanLines.push(line)
+  }
+  return cleanLines.join('\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 const MODEL_OPTIONS = [
@@ -6054,6 +6084,14 @@ function App() {
                 className="image-modal-generate-btn"
                 onClick={() => handleGenerateImage()}
                 disabled={isGeneratingImage || !imagePrompt.trim()}
+                style={{
+                  background: isGeneratingImage || !imagePrompt.trim()
+                    ? 'linear-gradient(135deg, #94a3b8, #64748b)'
+                    : 'linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%)',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#ffffff'
+                }}
               >
                 {isGeneratingImage ? (
                   <>

@@ -256,11 +256,36 @@ THEMES = {
 }
 
 
+FONTS_DIR = Path(__file__).parent / "fonts"
+
+
 def get_font(size: int = 14, bold: bool = False):
-    """Safely retrieves a crisp TrueType or FreeType font, falling back gracefully."""
+    """Safely retrieves a crisp TrueType or FreeType font, checking bundled fonts first."""
+    # 1. Check bundled project fonts (guaranteed identical rendering on Windows, Linux, Render)
+    bundled = [
+        FONTS_DIR / ("arialbd.ttf" if bold else "arial.ttf"),
+        FONTS_DIR / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
+    ]
+    for b in bundled:
+        if b.exists():
+            try:
+                return ImageFont.truetype(str(b), size)
+            except Exception:
+                pass
+
+    # 2. Common font file names (Pillow/FreeType lookup)
     candidates = ["arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf", "segoeui.ttf"]
     if bold:
         candidates = ["arialbd.ttf", "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf", "segoeuib.ttf"] + candidates
+
+    # 3. Explicit Linux system font paths (Debian / Ubuntu / Render)
+    linux_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    candidates = candidates + linux_paths
+
     for c in candidates:
         try:
             return ImageFont.truetype(c, size)
@@ -694,22 +719,31 @@ def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
         card_h = 72
         draw.rectangle([(sb_x1 + 10, curr_y), (sb_x2 - 10, curr_y + card_h)], fill=T["bg"], outline=T["grid_major"], width=1)
         raw_tag = comp.get("symbol", f"M-{i}").strip()
-        tag = re.sub(r'[^A-Za-z0-9_-]', '', raw_tag)[:7].upper() or f"M-{i}"
+        comp_name = comp.get("name", "Component").strip()
+        if len(raw_tag) > 5 or (comp_name and raw_tag.lower() in comp_name.lower()):
+            words = [w for w in re.split(r'[\s_-]+', comp_name) if w]
+            if len(words) >= 2:
+                tag = "".join(w[0] for w in words)[:4].upper()
+            else:
+                tag = comp_name[:4].upper()
+        else:
+            tag = re.sub(r'[^A-Za-z0-9_-]', '', raw_tag)[:5].upper() or f"M-{i}"
+
         tb = draw.textbbox((0, 0), tag, font=fonts["badge"])
         tag_w = tb[2] - tb[0]
-        badge_w = max(46, tag_w + 14)
+        badge_w = max(42, tag_w + 14)
         draw.rectangle([(sb_x1 + 16, curr_y + 8), (sb_x1 + 16 + badge_w, curr_y + 26)], fill=T["stage_header"])
         draw.text((sb_x1 + 16 + (badge_w - tag_w) // 2, curr_y + 9), tag, fill="#ffffff", font=fonts["badge"])
 
         name_x = sb_x1 + 16 + badge_w + 10
         max_nw = (sb_x2 - 16) - name_x
-        name_txt = truncate_to_width(comp.get("name", "Component"), max_nw, fonts["card_title"], draw)
+        name_txt = truncate_to_width(comp_name, max_nw, fonts["card_title"], draw)
         draw.text((name_x, curr_y + 9), name_txt, fill=T["text_bright"], font=fonts["card_title"])
 
         spec_w = sb_x2 - sb_x1 - 36
         spec_lines = wrap_text_pixel(f"Spec: {comp.get('spec', 'Engineering standard')}", spec_w, fonts["body"], draw)[:2]
         if spec_lines:
-            draw.text((sb_x1 + 16, curr_y + 32), spec_lines[0], fill=T["text_dim"], font=fonts["body"])
+            draw.text((sb_x1 + 16, curr_y + 32), truncate_to_width(spec_lines[0], spec_w, fonts["body"], draw), fill=T["text_dim"], font=fonts["body"])
         if len(spec_lines) > 1:
             draw.text((sb_x1 + 16, curr_y + 48), truncate_to_width(spec_lines[1], spec_w, fonts["body"], draw), fill=T["text_dim"], font=fonts["body"])
         curr_y += card_h + 10
@@ -721,6 +755,13 @@ def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
     draw.text((cx1 + 15, cy1 + 9), "SCHEMATIC TOPOLOGY & INTERCONNECTION ARCHITECTURE", fill="#ffffff", font=fonts["sec"])
 
     stages = data.get("stages", [])[:4]
+    if not stages:
+        stages = [
+            {"name": "Input Ingestion", "desc": "Capture and buffer incoming streams"},
+            {"name": "Processing Core", "desc": "Execute transformations and logic"},
+            {"name": "Verification", "desc": "Validate integrity and constraints"},
+            {"name": "Output Distribution", "desc": "Route to consumers and storage"}
+        ]
     n = len(stages)
     block_w = 175
     block_h = 240
@@ -739,20 +780,20 @@ def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
         st_w = st_b[2] - st_b[0]
         draw.text((bx + (block_w - st_w) // 2, by + 7), st_lbl, fill="#ffffff", font=fonts["badge"])
 
-        name_lines = wrap_text_pixel(stage.get("name", "Stage"), block_w - 18, fonts["card_title"], draw)[:2]
+        name_lines = wrap_text_pixel(stage.get("name", "Stage"), block_w - 20, fonts["card_title"], draw)[:2]
         ty = by + 36
         for nl in name_lines:
-            draw.text((bx + 10, ty), nl, fill=T["text_bright"], font=fonts["card_title"])
+            draw.text((bx + 10, ty), truncate_to_width(nl, block_w - 20, fonts["card_title"], draw), fill=T["text_bright"], font=fonts["card_title"])
             ty += 18
 
         sep_y = by + 80
         draw.line([(bx + 8, sep_y), (bx + block_w - 8, sep_y)], fill=T["grid_major"], width=1)
         draw.text((bx + 10, sep_y + 8), "Function / Logic:", fill=T["glow"], font=fonts["micro"])
 
-        desc_lines = wrap_text_pixel(stage.get("desc", ""), block_w - 18, fonts["body"], draw)[:4]
+        desc_lines = wrap_text_pixel(stage.get("desc", ""), block_w - 20, fonts["body"], draw)[:4]
         dy = sep_y + 24
         for dl in desc_lines:
-            draw.text((bx + 10, dy), dl, fill=T["text_light"], font=fonts["body"])
+            draw.text((bx + 10, dy), truncate_to_width(dl, block_w - 20, fonts["body"], draw), fill=T["text_light"], font=fonts["body"])
             dy += 16
 
         # Flow Arrow: Drawn strictly in the gap BETWEEN blocks with zero text collision
@@ -775,7 +816,8 @@ def render_general_schematic_image(data: dict, W: int = 1400, H: int = 900) -> I
     bus_lbl = "CLOSED-LOOP FEEDBACK REGULATION & MONITORING BUS"
     bus_w = draw.textbbox((0, 0), bus_lbl, font=fonts["badge"])[2] - draw.textbbox((0, 0), bus_lbl, font=fonts["badge"])[0]
     bus_x = start_x + ((n * (block_w + gap) - gap) - bus_w) // 2
-    draw.text((max(start_x + 20, bus_x), fb_y + 10), bus_lbl, fill=T["loop"], font=fonts["badge"])
+    safe_bus_x = max(cx1 + 20, min(bus_x, cx2 - bus_w - 20))
+    draw.text((safe_bus_x, fb_y + 10), truncate_to_width(bus_lbl, cx2 - cx1 - 40, fonts["badge"], draw), fill=T["loop"], font=fonts["badge"])
 
     return img
 

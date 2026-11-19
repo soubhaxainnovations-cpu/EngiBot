@@ -245,18 +245,18 @@ def clean_chatbot_response(text: str) -> str:
     if not text:
         return ""
 
-    # 1. Convert LaTeX math commands to plain readable English
+    # 1. Strip code blocks / boxes / fonts
+    text = re.sub(r'\\boxed\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\(?:mathbf|mathit|mathrm|textbf|textit|text)\{([^}]+)\}', r'\1', text)
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1 / \2)', text)
     text = re.sub(r'\\times\b', '*', text)
     text = re.sub(r'\\cdot\b', '*', text)
     text = re.sub(r'\\div\b', '/', text)
     text = re.sub(r'\\sum(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*', 'Sum of ', text)
     text = re.sub(r'\\int(?:_\{[^}]*\}|\^[^{\s]*|\{[^}]*\})*', 'Integral of ', text)
-    text = re.sub(r'\\(?:quad|qquad|left|right)\b', ' ', text)
-    text = re.sub(r'\\(?:text|mathrm|mathbf)\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\(?:quad|qquad|left|right|displaystyle)\b', ' ', text)
     text = re.sub(r'_\{([^}]+)\}', r'_\1', text)
     text = re.sub(r'\^\{([^}]+)\}', r'^\1', text)
-    text = re.sub(r'\{([A-Za-z0-9_]+)\}', r'\1', text)
 
     # 2. Strip math delimiters: $$...$$, \[...\], \(...\), $...$
     text = re.sub(r'\$\$(.*?)\$\$', r'\1', text, flags=re.DOTALL)
@@ -264,42 +264,59 @@ def clean_chatbot_response(text: str) -> str:
     text = re.sub(r'\\\((.*?)\\\)', r'\1', text, flags=re.DOTALL)
     text = re.sub(r'(?<!\$)\$(?!\$)(.*?)\$', r'\1', text)
 
-    # 3. Strip bold/italic asterisks: **word** -> word, *word* -> word
+    # 3. Strip any remaining LaTeX commands like \Delta, \alpha, etc.
+    text = re.sub(r'\\[a-zA-Z]+', '', text)
+
+    # 4. Strip curly braces used in LaTeX
+    text = re.sub(r'\{([^{}]+)\}', r'\1', text)
+    text = text.replace('{', '').replace('}', '')
+
+    # 5. Strip bold/italic asterisks: **word** -> word, *word* -> word
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'(?<!\*)\*(?!\*)(.*?)\*', r'\1', text)
-    text = text.replace('**', '')
+    text = text.replace('**', '').replace('*', '')
 
-    # 4. Strip double underscores: __word__ -> word
+    # 6. Strip double underscores: __word__ -> word
     text = re.sub(r'__(.*?)__', r'\1', text)
     text = text.replace('__', '')
 
-    # 5. Clean double pipes || and tables to bullet lines
+    # 7. Clean double pipes || and tables to clean bullet lines
     text = text.replace('||', ' ')
     clean_lines = []
     for line in text.split('\n'):
-        if re.match(r'^\s*\|?\s*[-:]+[-| :]+\|?\s*$', line):
+        line_clean = line.strip()
+        if re.match(r'^\s*\|?\s*[-:]+[-| :]+\|?\s*$', line_clean):
             continue
-        if line.count('|') >= 2:
-            parts = [p.strip() for p in line.split('|') if p.strip()]
-            clean_lines.append(' - ' + ' : '.join(parts))
-        else:
-            clean_lines.append(line)
+        if line_clean.startswith('|') and line_clean.endswith('|'):
+            cells = [c.strip() for c in line_clean.strip('|').split('|') if c.strip()]
+            if cells:
+                clean_lines.append(' - ' + ' : '.join(cells))
+            continue
+        if line_clean.count('|') >= 2:
+            cells = [c.strip() for c in line_clean.split('|') if c.strip()]
+            if cells:
+                clean_lines.append(' - ' + ' : '.join(cells))
+            continue
+        clean_lines.append(line)
     text = '\n'.join(clean_lines)
 
-    # 6. Clean multiple dashes (-- or ---), preserving single dash bullet "- "
+    # 8. Clean multiple dashes (-- or ---), preserving single dash bullet "- "
     text = re.sub(r'^-{2,}\s*$', '', text, flags=re.MULTILINE)
     text = re.sub(r'--+', ' - ', text)
 
-    # 7. Clean double slashes // (leaving http:// and https:// intact)
+    # 9. Clean double slashes // (leaving http:// and https:// intact)
     text = re.sub(r'(?<!https:)(?<!http:)//', ' / ', text)
 
-    # 8. Strip markdown headers (###, ##, #)
+    # 10. Strip markdown headers (###, ##, #)
     text = re.sub(r'^\s*#{1,6}\s*', '', text, flags=re.MULTILINE)
 
-    # 9. Clean residual backslashes
+    # 11. Clean residual backslashes
     text = text.replace('\\', '')
 
-    # 10. Normalize spaces and multiple blank lines
+    # 12. Clean <br> tags if any
+    text = re.sub(r'<br\s*/?>', ' ', text, flags=re.IGNORECASE)
+
+    # 13. Normalize spaces and multiple blank lines
     text = re.sub(r'[ \t]{2,}', ' ', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()

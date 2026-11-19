@@ -1879,8 +1879,8 @@
 /* AI Studio Modal Action Buttons */
 .image-modal-footer {
   margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid #f1f5f9;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-color, #e2e8f0);
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -1888,12 +1888,13 @@
 }
 
 .image-modal-cancel-btn {
-  background: #f8fafc;
-  color: #475569;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  background: var(--bg-tertiary, #f8fafc);
+  color: var(--text-secondary, #475569);
+  border: 1px solid var(--border-color, #cbd5e1) !important;
+  outline: none !important;
+  border-radius: 12px;
   padding: 10px 22px;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -1902,15 +1903,15 @@
   justify-content: center;
   gap: 6px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .image-modal-cancel-btn:hover:not(:disabled) {
-  background: #f1f5f9;
-  color: #0f172a;
-  border-color: #94a3b8;
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+  border-color: var(--border-color-hover, #94a3b8) !important;
   transform: translateY(-1px);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
 }
 
 .image-modal-cancel-btn:active:not(:disabled) {
@@ -1923,12 +1924,13 @@
 }
 
 .image-modal-generate-btn {
-  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  padding: 10px 24px;
-  font-size: 0.9rem;
+  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  outline: none !important;
+  border-radius: 12px;
+  padding: 11px 26px;
+  font-size: 0.92rem;
   font-weight: 600;
   font-family: inherit;
   letter-spacing: 0.01em;
@@ -1937,19 +1939,19 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .image-modal-generate-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 50%, #6d28d9 100%);
+  background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 50%, #6d28d9 100%) !important;
   transform: translateY(-1.5px);
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
 }
 
 .image-modal-generate-btn:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
 }
 
 .image-modal-generate-btn:disabled {
@@ -1957,6 +1959,27 @@
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* Dark Theme Support for Image Modal */
+[data-theme="dark"] .image-modal-footer,
+.dark-theme .image-modal-footer {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .image-modal-cancel-btn,
+.dark-theme .image-modal-cancel-btn {
+  background: #1e293b;
+  color: #cbd5e1;
+  border-color: #334155 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .image-modal-cancel-btn:hover:not(:disabled),
+.dark-theme .image-modal-cancel-btn:hover:not(:disabled) {
+  background: #334155;
+  color: #f8fafc;
+  border-color: #475569 !important;
 }
 
 /* Global Calculator / Modal Action Buttons Backup */
