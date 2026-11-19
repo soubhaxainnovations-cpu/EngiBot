@@ -7,7 +7,11 @@ import urllib.parse
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import requests
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -291,6 +295,21 @@ def render_native_schematic_image(research_data: dict, style: str = "schematic",
         theme_key = "cad_white"
 
     T = THEMES[theme_key]
+    title = research_data.get("title", "Engineering Technical Schematic").upper()
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", title[:25].strip()).strip("_") or "schematic"
+    file_uuid = uuid.uuid4().hex[:8]
+
+    # If Pillow is not available, render clean SVG vector schematic
+    if not HAS_PIL:
+        svg_filename = f"gen_schematic_{slug}_{file_uuid}.svg"
+        svg_path = UPLOAD_DIR / svg_filename
+        svg_content = generate_vector_svg(research_data, T, width, height)
+        with open(svg_path, "w", encoding="utf-8") as f:
+            f.write(svg_content)
+        file_size = os.path.getsize(svg_path)
+        print(f"[IMAGE GENERATOR] Rendered vector SVG schematic (Pillow unavailable): {svg_filename} ({file_size} bytes)")
+        return f"/uploads/{svg_filename}", f"/uploads/{svg_filename}", file_size
+
     img = Image.new("RGB", (width, height), color=T["bg"])
     draw = ImageDraw.Draw(img)
 
@@ -445,6 +464,20 @@ def generate_vector_svg(data: dict, theme: dict, w: int, h: int) -> str:
   <rect x="30" y="30" width="{w-60}" height="62" fill="{theme['stage_bg']}" stroke="{theme['border']}" stroke-width="1"/>
   <text x="45" y="55" font-family="monospace, sans-serif" font-weight="bold" font-size="16" fill="{theme['text_bright']}">ENGINEERING SCHEMATIC: {title.upper()}</text>
   <text x="45" y="78" font-family="sans-serif" font-size="12" fill="{theme['text_light']}">DISCIPLINE: {discipline} | STANDARD: {standard} | RESEARCH ENGINE: {model}</text>
+
+  <!-- Left Sidebar: Bill of Materials -->
+  <g transform="translate(30, 105)">
+    <rect width="400" height="{h-225}" fill="{theme['stage_bg']}" stroke="{theme['accent']}" stroke-width="1"/>
+    <rect width="400" height="32" fill="{theme['accent']}"/>
+    <text x="15" y="21" font-family="sans-serif" font-size="12" font-weight="bold" fill="#ffffff">RESEARCHED BILL OF MATERIALS &amp; SPECS</text>
+  </g>
+
+  <!-- Central Schematic Topology Area -->
+  <g transform="translate(450, 105)">
+    <rect width="{w-480}" height="{h-225}" fill="{theme['stage_bg']}" stroke="{theme['accent']}" stroke-width="1"/>
+    <rect width="{w-480}" height="32" fill="{theme['stage_header']}"/>
+    <text x="15" y="21" font-family="sans-serif" font-size="12" font-weight="bold" fill="#ffffff">SCHEMATIC TOPOLOGY &amp; INTERCONNECTION ARCHITECTURE</text>
+  </g>
 
   <!-- Title Block -->
   <g transform="translate({w-560}, {h-105})">
