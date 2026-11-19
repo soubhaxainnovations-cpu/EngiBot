@@ -995,32 +995,60 @@ function App() {
       height = 1024;
     }
 
-    try {
-      const res = await fetch(`${API_BASE}/api/image/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptToUse,
-          style: imageStyle,
-          discipline: activeDiscipline.id,
-          width,
-          height,
-          research_model: imageResearchModel,
-          conversation_id: currentConversationId,
-          user_id: user?.id
-        })
-      });
+    const payload = {
+      prompt: promptToUse,
+      style: imageStyle,
+      discipline: activeDiscipline.id,
+      width,
+      height,
+      research_model: imageResearchModel,
+      conversation_id: currentConversationId,
+      user_id: user?.id
+    };
 
-      if (!res.ok) {
-        let errDetail = `Server returned ${res.status}`;
-        try {
-          const errData = await res.json();
-          errDetail = errData.detail || errData.message || errDetail;
-        } catch {}
-        throw new Error(errDetail);
+    let data = null;
+    let lastError = null;
+
+    // Auto-retry once if backend is waking up or was restarting
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}/api/image/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          let errDetail = `Server returned ${res.status}`;
+          try {
+            const errData = await res.json();
+            errDetail = errData.detail || errData.message || errDetail;
+          } catch {}
+          throw new Error(errDetail);
+        }
+
+        data = await res.json();
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[Image Studio] Attempt ${attempt} error:`, err);
+        if (attempt === 1 && (err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network'))) {
+          await new Promise(r => setTimeout(r, 2500));
+        }
       }
+    }
 
-      const data = await res.json();
+    if (!data) {
+      setIsGeneratingImage(false);
+      let userMsg = lastError?.message || "Failed to generate visual.";
+      if (userMsg.toLowerCase().includes('failed to fetch') || userMsg.toLowerCase().includes('network')) {
+        userMsg = "Connection to the backend was briefly interrupted (the server was waking up or reloading). Please click 'Research & Generate Visual' again.";
+      }
+      setImageGenError(userMsg);
+      return;
+    }
+
+    try {
       setGeneratedImageResult(data);
 
       // If a chat conversation is active, also append directly into chat stream
