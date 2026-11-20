@@ -1549,7 +1549,7 @@ function App() {
     e?.preventDefault()
     const emailClean = emailInput.trim().toLowerCase()
     if (!emailClean) {
-      setAuthAlert({ type: 'error', text: 'Please enter your email address.' })
+      setAuthAlert({ type: 'error', text: 'Please enter your Mail ID or Username.' })
       return
     }
 
@@ -4186,13 +4186,13 @@ function App() {
                 <Mail size={18} className="input-icon" />
                 <input
                   name="email"
-                  type="email"
-                  placeholder="Enter your Mail ID (e.g. name@college.edu)"
+                  type="text"
+                  placeholder="Enter your Mail ID or Username"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   required
                   autoFocus
-                  autoComplete="email"
+                  autoComplete="username email"
                 />
               </div>
 

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Date, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Date, inspect, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
@@ -74,8 +74,10 @@ if raw_db_url:
 
     SQLALCHEMY_DATABASE_URL = raw_db_url
 else:
-    # Default fallback to SQLite if no PostgreSQL connection is provided
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./chatbot.db"
+    # Default fallback to SQLite pointing to absolute persistent backend/chatbot.db
+    BACKEND_DIR = Path(__file__).resolve().parent
+    SQLITE_DB_PATH = (BACKEND_DIR / "chatbot.db").resolve()
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH.as_posix()}"
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
@@ -237,7 +239,9 @@ def init_db():
             DB_STATUS["active"] = "sqlite_dev_fallback"
             DB_STATUS["error"] = err_str
             
-            SQLALCHEMY_DATABASE_URL = "sqlite:///./chatbot.db"
+            BACKEND_DIR = Path(__file__).resolve().parent
+            SQLITE_DB_PATH = (BACKEND_DIR / "chatbot.db").resolve()
+            SQLALCHEMY_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH.as_posix()}"
             engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
             SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -406,6 +410,27 @@ def verify_session_token(token: str) -> Optional[int]:
         return int(uid_str)
     except Exception:
         return None
+
+def find_user_by_identifier(db: Session, identifier: str) -> Optional[User]:
+    """
+    Search for a user flexibly and case-insensitively:
+    - By email (e.g. name@domain.com)
+    - By exact username
+    - By username with or without '@' prefix (e.g. '@soubhagya' or 'soubhagya')
+    """
+    if not identifier:
+        return None
+    clean = identifier.strip()
+    clean_lower = clean.lower()
+    clean_no_at = clean.lstrip("@").lower()
+    clean_with_at = f"@{clean_no_at}"
+
+    return db.query(User).filter(
+        (func.lower(User.email) == clean_lower) |
+        (func.lower(User.username) == clean_lower) |
+        (func.lower(User.username) == clean_no_at) |
+        (func.lower(User.username) == clean_with_at)
+    ).first()
 
 def verify_ownership(target_user_id: int, authorization: Optional[str] = None) -> bool:
     """Enforce ownership check: verify caller token matches target_user_id to prevent IDOR and unauthorized data exposure."""
@@ -1001,9 +1026,7 @@ def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get
 @app.post("/api/login")
 def login(auth: UserLogin, db: Session = Depends(get_db)):
     clean_identifier = auth.username.strip()
-    user = db.query(User).filter(
-        (User.username == clean_identifier) | (User.email == clean_identifier.lower())
-    ).first()
+    user = find_user_by_identifier(db, clean_identifier)
     if not user or not verify_password(auth.password.strip(), user.password):
         raise HTTPException(status_code=401, detail="Invalid username/email or password")
 
@@ -1126,33 +1149,40 @@ def forgot_password_reset(req: ForgotPasswordResetRequest, db: Session = Depends
 
 @app.post("/api/otp/send")
 def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
-    email_clean = request.email.strip().lower()
-    if not email_clean or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_clean):
-        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    identifier = request.email.strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Please enter your email address or username.")
 
-    # OTP Login is strictly for registered accounts
-    user = db.query(User).filter((User.email == email_clean) | (User.username == email_clean)).first()
+    # Flexible case-insensitive lookup by email or username
+    user = find_user_by_identifier(db, identifier)
     if not user:
         raise HTTPException(
             status_code=404,
-            detail="No account registered with this email address. Please click 'Create one now' to register your account."
+            detail="No account registered with this email address or username. Please click 'Create one now' to register your account."
+        )
+
+    target_email = (user.email if user and user.email else identifier).strip().lower()
+    if not target_email or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", target_email):
+        raise HTTPException(
+            status_code=400,
+            detail=f"User account '{user.username}' does not have an email address associated. Please sign in using your password in the Password tab."
         )
 
     # Invalidate old unused OTPs for this email to keep clean
     db.query(EmailOTP).filter(
-        EmailOTP.email == email_clean,
+        EmailOTP.email == target_email,
         EmailOTP.is_used == 0
     ).update({"is_used": 2}) # 2 = superseded
 
     # Rate limit OTP send requests (max 3 per 10 minutes)
-    check_otp_send_rate_limit(email_clean)
+    check_otp_send_rate_limit(target_email)
 
     # Generate 6-digit numeric OTP
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = datetime.utcnow() + timedelta(minutes=10)
 
     # Send email directly to the user's mail ID
-    mail_result = send_otp_email(email_clean, otp_code)
+    mail_result = send_otp_email(target_email, otp_code)
     is_demo_mode = False
 
     if not mail_result.get("sent"):
@@ -1160,11 +1190,11 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
         # If Render blocks outbound SMTP (Errno 101 Network is unreachable) or SMTP not configured,
         # gracefully fall back to Demo Mode with the code so user is never blocked!
         is_demo_mode = True
-        print(f"\n[DEMO MODE OTP] Email delivery unavailable ({err}). Verification Code for {email_clean} is: {otp_code}\n")
+        print(f"\n[DEMO MODE OTP] Email delivery unavailable ({err}). Verification Code for {target_email} is: {otp_code}\n")
 
     # Save to database with secure hash
     new_otp = EmailOTP(
-        email=email_clean,
+        email=target_email,
         otp_code=hash_otp_code(otp_code),
         expires_at=expires_at,
         is_used=0
@@ -1177,28 +1207,31 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
         return {
             "status": "success",
             "message": f"{reason}: Verification code is {otp_code} (Auto-filled below).",
-            "email": email_clean,
+            "email": target_email,
             "demo_otp": otp_code
         }
 
     return {
         "status": "success",
-        "message": f"Verification code sent to {email_clean}. Please check your mail inbox.",
-        "email": email_clean
+        "message": f"Verification code sent to {target_email}. Please check your mail inbox.",
+        "email": target_email
     }
 
 @app.post("/api/otp/verify")
 def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
-    email_clean = request.email.strip().lower()
+    identifier = request.email.strip()
     code_clean = request.otp_code.strip()
 
-    if not email_clean or not code_clean:
+    if not identifier or not code_clean:
         raise HTTPException(status_code=400, detail="Email and OTP code are required.")
+
+    user = find_user_by_identifier(db, identifier)
+    target_email = (user.email if user and user.email else identifier).strip().lower()
 
     # Find matching valid OTP
     now = datetime.utcnow()
     candidates = db.query(EmailOTP).filter(
-        EmailOTP.email == email_clean,
+        (func.lower(EmailOTP.email) == target_email) | (func.lower(EmailOTP.email) == identifier.lower()),
         EmailOTP.is_used == 0,
         EmailOTP.expires_at >= now
     ).order_by(EmailOTP.id.desc()).all()
@@ -1210,16 +1243,17 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
             break
 
     if not otp_record:
-        check_otp_verify_rate_limit(email_clean)
+        check_otp_verify_rate_limit(target_email)
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code. Please request a new code.")
 
-    reset_otp_verify_rate_limit(email_clean)
+    reset_otp_verify_rate_limit(target_email)
     # Mark OTP as used
     otp_record.is_used = 1
     db.commit()
 
-    # Look for existing user with this email or username (strictly registered accounts)
-    user = db.query(User).filter((User.email == email_clean) | (User.username == email_clean)).first()
+    if not user:
+        user = find_user_by_identifier(db, target_email)
+
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1764,6 +1798,11 @@ def generate_ai_response(
 @app.post("/api/chat")
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
     try:
+        # Verify user exists in database before proceeding
+        user = db.query(User).filter(User.id == request.user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="User account session not found. Please sign in again.")
+
         conv = None
         if request.conversation_id:
             conv = db.query(Conversation).filter(
@@ -1793,7 +1832,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
             conv.title = clean_title or "New Chat"
 
         # Lookup user profile to dynamically compose the system prompt
-        user = db.query(User).filter(User.id == request.user_id).first()
         user_role = user.role if user and user.role else "student"
         user_univ = user.university if user and user.university else "BPUT"
         user_sem = user.semester if user and user.semester else 5

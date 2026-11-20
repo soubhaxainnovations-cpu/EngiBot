@@ -152,5 +152,27 @@ class TestEngiBotSecurity(unittest.TestCase):
         self.assertNotIn("/", res["file_name"])
         self.assertNotIn("\\", res["file_name"])
 
+    # -------------------------------------------------------------
+    # User Lookup Flexibility & Database Persistence
+    # -------------------------------------------------------------
+    def test_user_lookup_flexibility_and_persistence(self):
+        db = engibot_main.SessionLocal()
+        try:
+            # Check database is pointing to persistent storage with active users
+            user_count = db.query(engibot_main.User).count()
+            self.assertGreater(user_count, 0)
+
+            # Test flexible lookup by username with @ prefix
+            u1 = engibot_main.find_user_by_identifier(db, "@soubhagya")
+            u2 = engibot_main.find_user_by_identifier(db, "soubhagya")
+            self.assertIsNotNone(u1 or u2)
+
+            # Test flexible lookup by email case-insensitively
+            u_email = engibot_main.find_user_by_identifier(db, "ENGINEER@TEST.COM")
+            self.assertIsNotNone(u_email)
+            self.assertEqual(u_email.email, "engineer@test.com")
+        finally:
+            db.close()
+
 if __name__ == "__main__":
     unittest.main()
