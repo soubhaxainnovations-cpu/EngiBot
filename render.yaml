@@ -13,8 +13,12 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      - key: ENVIRONMENT
+        value: production
+      - key: ENFORCE_PERSISTENT_DB
+        value: "true"
       - key: DATABASE_URL
-        sync: false # Set to your persistent Supabase / Neon PostgreSQL URI (Session mode, port 5432)
+        sync: false # MANDATORY: Persistent PostgreSQL connection string (Supabase / Neon / Render Postgres, port 5432)
       - key: SESSION_SECRET
         generateValue: true # Secure random secret for session token signatures
       - key: ALLOWED_ORIGINS

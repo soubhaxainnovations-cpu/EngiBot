@@ -153,6 +153,75 @@ class TestEngiBotSecurity(unittest.TestCase):
         self.assertNotIn("\\", res["file_name"])
 
     # -------------------------------------------------------------
+    # Priority 5: Enforce Persistent PostgreSQL in Production
+    # -------------------------------------------------------------
+    def test_production_environment_detection(self):
+        saved_env = {k: os.environ.get(k) for k in ("RENDER", "ENVIRONMENT", "NODE_ENV", "ENFORCE_PERSISTENT_DB")}
+        try:
+            # Clear all
+            for k in ("RENDER", "ENVIRONMENT", "NODE_ENV", "ENFORCE_PERSISTENT_DB"):
+                os.environ.pop(k, None)
+            self.assertFalse(engibot_main.is_production_env())
+
+            # Test RENDER
+            os.environ["RENDER"] = "true"
+            self.assertTrue(engibot_main.is_production_env())
+            os.environ.pop("RENDER", None)
+
+            # Test ENVIRONMENT
+            os.environ["ENVIRONMENT"] = "production"
+            self.assertTrue(engibot_main.is_production_env())
+            os.environ["ENVIRONMENT"] = "development"
+            self.assertFalse(engibot_main.is_production_env())
+            os.environ.pop("ENVIRONMENT", None)
+
+            # Test ENFORCE_PERSISTENT_DB
+            os.environ["ENFORCE_PERSISTENT_DB"] = "1"
+            self.assertTrue(engibot_main.is_production_env())
+        finally:
+            for k, v in saved_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_production_strictly_rejects_missing_postgres_url(self):
+        # Empty DATABASE_URL in production must raise RuntimeError
+        with self.assertRaises(RuntimeError) as ctx:
+            engibot_main.validate_db_configuration("", is_prod=True)
+        self.assertIn("strictly enforced in production", str(ctx.exception))
+        self.assertIn("data loss", str(ctx.exception))
+
+    def test_production_strictly_rejects_sqlite_url(self):
+        # Explicit SQLite in production must raise RuntimeError
+        with self.assertRaises(RuntimeError) as ctx:
+            engibot_main.validate_db_configuration("sqlite:///ephemeral.db", is_prod=True)
+        self.assertIn("SQLite database URL detected in production", str(ctx.exception))
+
+    def test_production_rejects_placeholder_password(self):
+        # Placeholder password in production must raise RuntimeError
+        with self.assertRaises(RuntimeError) as ctx:
+            engibot_main.validate_db_configuration(
+                "postgresql://postgres:[YOUR-PASSWORD]@aws-0.pooler.supabase.com:5432/postgres",
+                is_prod=True
+            )
+        self.assertIn("placeholder credentials", str(ctx.exception))
+
+    def test_production_normalizes_postgres_and_ssl(self):
+        # Normalizes postgres:// to postgresql+psycopg2:// and enforces sslmode
+        url = "postgres://usr:pwd@aws-0.pooler.supabase.com:5432/postgres?pgbouncer=true"
+        normalized = engibot_main.validate_db_configuration(url, is_prod=True)
+        self.assertTrue(normalized.startswith("postgresql+psycopg2://"))
+        self.assertIn("sslmode=require", normalized)
+        self.assertNotIn("pgbouncer=true", normalized)
+
+    def test_development_mode_allows_offline_sqlite(self):
+        # Development mode safely falls back to local SQLite
+        normalized = engibot_main.validate_db_configuration("", is_prod=False)
+        self.assertTrue(normalized.startswith("sqlite:///"))
+        self.assertIn("chatbot.db", normalized)
+
+    # -------------------------------------------------------------
     # User Lookup Flexibility & Database Persistence
     # -------------------------------------------------------------
     def test_user_lookup_flexibility_and_persistence(self):

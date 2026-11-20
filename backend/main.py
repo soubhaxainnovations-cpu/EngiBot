@@ -36,12 +36,8 @@ if env_path.exists():
 else:
     load_dotenv(override=True)
 
-# Database Setup (Supports PostgreSQL with fallback to SQLite)
+# Database Setup (Supports PostgreSQL with fallback to SQLite in development)
 raw_db_url = os.getenv("DATABASE_URL", "").strip().strip('"').strip("'")
-
-if "[YOUR-PASSWORD]" in raw_db_url or "[PASSWORD]" in raw_db_url:
-    print("\n[CRITICAL ERROR] DATABASE_URL in environment contains literal placeholder '[YOUR-PASSWORD]'.")
-    print("Please replace '[YOUR-PASSWORD]' with your actual Supabase database password in Render Environment tab!\n")
 
 # Support individual POSTGRES_* environment variables if DATABASE_URL is not directly set
 if not raw_db_url and os.getenv("POSTGRES_DB"):
@@ -53,31 +49,76 @@ if not raw_db_url and os.getenv("POSTGRES_DB"):
     auth_part = f"{pg_user}:{pg_password}@" if pg_password else f"{pg_user}@"
     raw_db_url = f"postgresql://{auth_part}{pg_host}:{pg_port}/{pg_db}"
 
-if raw_db_url:
-    # Ensure postgresql+psycopg2:// driver is used for standard postgresql URLs
-    if raw_db_url.startswith("postgres://"):
-        raw_db_url = raw_db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif raw_db_url.startswith("postgresql://") and not raw_db_url.startswith("postgresql+"):
-        raw_db_url = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-    
-    # Strip Prisma-specific ?pgbouncer=true or &pgbouncer=true which causes libpq 'invalid connection option' error
-    raw_db_url = re.sub(r'[?&]pgbouncer=[^&]*', '', raw_db_url)
-    # Clean up trailing '?' or '&' if pgbouncer was the only param
-    if raw_db_url.endswith("?") or raw_db_url.endswith("&"):
-        raw_db_url = raw_db_url[:-1]
-        
-    # Ensure sslmode=require is set for cloud connections (Supabase / Neon / Render)
-    if "pooler.supabase.com" in raw_db_url or "supabase.co" in raw_db_url:
-        if "sslmode=" not in raw_db_url:
-            separator = "&" if "?" in raw_db_url else "?"
-            raw_db_url = f"{raw_db_url}{separator}sslmode=require"
+def is_production_env() -> bool:
+    """Returns True if running in a cloud or production environment where persistent PostgreSQL is mandatory."""
+    return (
+        os.getenv("RENDER", "false").lower() in ("true", "1", "yes")
+        or os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
+        or os.getenv("NODE_ENV", "").lower() in ("production", "prod")
+        or os.getenv("ENFORCE_PERSISTENT_DB", "").lower() in ("true", "1", "yes")
+    )
 
-    SQLALCHEMY_DATABASE_URL = raw_db_url
-else:
-    # Default fallback to SQLite pointing to absolute persistent backend/chatbot.db
-    BACKEND_DIR = Path(__file__).resolve().parent
-    SQLITE_DB_PATH = (BACKEND_DIR / "chatbot.db").resolve()
-    SQLALCHEMY_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH.as_posix()}"
+def validate_db_configuration(db_url: str, is_prod: bool) -> str:
+    """
+    Validates and normalizes database configuration.
+    In production (is_prod=True), persistent PostgreSQL is strictly enforced to protect user data from deletion.
+    In development (is_prod=False), local SQLite (backend/chatbot.db) is permitted for offline development.
+    """
+    url = (db_url or "").strip().strip('"').strip("'")
+
+    if "[YOUR-PASSWORD]" in url or "[PASSWORD]" in url:
+        if is_prod:
+            raise RuntimeError(
+                "[CRITICAL CONFIGURATION ERROR] DATABASE_URL contains placeholder credentials ('[YOUR-PASSWORD]'). "
+                "A persistent PostgreSQL database is strictly enforced in production to prevent user account and chat history loss. "
+                "Please replace the placeholder with your actual database password in your environment variables."
+            )
+        else:
+            print("[CRITICAL WARNING] DATABASE_URL contains literal placeholder '[YOUR-PASSWORD]'.")
+
+    if is_prod:
+        if not url:
+            raise RuntimeError(
+                "[CRITICAL CONFIGURATION ERROR] Persistent PostgreSQL database is strictly enforced in production "
+                "(RENDER=true, ENVIRONMENT=production, or ENFORCE_PERSISTENT_DB=true). "
+                "DATABASE_URL is not set or empty. Ephemeral SQLite storage is prohibited in production to prevent "
+                "user account and chat data loss on container restart. "
+                "Please configure a valid PostgreSQL connection string (Supabase, Neon, or Render PostgreSQL)."
+            )
+        if url.startswith("sqlite"):
+            raise RuntimeError(
+                "[CRITICAL CONFIGURATION ERROR] SQLite database URL detected in production environment. "
+                "A persistent PostgreSQL database is strictly required in production to prevent data loss."
+            )
+
+    if url:
+        # Ensure postgresql+psycopg2:// driver is used for standard postgresql URLs
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+        # Strip Prisma-specific ?pgbouncer=true or &pgbouncer=true which causes libpq 'invalid connection option' error
+        url = re.sub(r'[?&]pgbouncer=[^&]*', '', url)
+        # Clean up trailing '?' or '&' if pgbouncer was the only param
+        if url.endswith("?") or url.endswith("&"):
+            url = url[:-1]
+
+        # Ensure sslmode=require is set for cloud connections (Supabase / Neon / Render)
+        if "pooler.supabase.com" in url or "supabase.co" in url:
+            if "sslmode=" not in url:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}sslmode=require"
+
+        return url
+    else:
+        # Development default: local SQLite pointing to absolute persistent backend/chatbot.db
+        backend_dir = Path(__file__).resolve().parent
+        sqlite_path = (backend_dir / "chatbot.db").resolve()
+        return f"sqlite:///{sqlite_path.as_posix()}"
+
+IS_PRODUCTION = is_production_env()
+SQLALCHEMY_DATABASE_URL = validate_db_configuration(raw_db_url, IS_PRODUCTION)
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
@@ -199,19 +240,30 @@ class EmailOTP(Base):
 
 def init_db():
     global engine, SessionLocal, SQLALCHEMY_DATABASE_URL, DB_STATUS
+    in_prod = is_production_env()
     
-    if SQLALCHEMY_DATABASE_URL.startswith("postgresql"):
-        print("[DB INIT] Checking connection to PostgreSQL...")
+    if in_prod:
+        if not SQLALCHEMY_DATABASE_URL.startswith("postgresql"):
+            DB_STATUS["connected"] = False
+            DB_STATUS["active"] = "sqlite_prohibited"
+            DB_STATUS["error"] = "Persistent PostgreSQL is strictly required in production"
+            raise RuntimeError(
+                "[CRITICAL DATABASE FAILURE] PostgreSQL is strictly required in production to ensure persistence. "
+                "SQLite is prohibited in production to prevent account and chat data deletion."
+            )
+
+        print("[DB INIT] Checking connection to persistent PostgreSQL database in production...")
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            print("[DB INIT] Successfully connected to PostgreSQL!")
+            print("[DB INIT] Successfully connected to persistent PostgreSQL database!")
             DB_STATUS["connected"] = True
             DB_STATUS["active"] = "postgresql"
+            DB_STATUS["error"] = None
         except Exception as e:
             err_str = str(e)
             print("\n" + "!" * 68)
-            print("[POSTGRESQL CONNECTION ATTEMPT FAILED]")
+            print("[CRITICAL POSTGRESQL CONNECTION FAILURE IN PRODUCTION]")
             print(f"Details: {err_str}")
             if "password authentication failed" in err_str:
                 print(">> REASON: Wrong database password in Render DATABASE_URL.")
@@ -220,30 +272,48 @@ def init_db():
                 print(">> FIX: In Render Environment tab, change :6543 to :5432 (Session mode) in DATABASE_URL!")
             elif "could not translate host name" in err_str:
                 print(">> REASON: Host could not be resolved. Ensure you use the pooler host.")
-            if os.getenv("ENFORCE_PERSISTENT_DB", os.getenv("RENDER", "false")).lower() in {"true", "1", "yes"}:
-                print("[CRITICAL] ENFORCE_PERSISTENT_DB is active. Silent SQLite fallback is blocked to prevent data loss!")
+            print("[CRITICAL] Silent SQLite fallback is blocked in production to protect user data from deletion!")
+            print("!" * 68 + "\n")
+            DB_STATUS["connected"] = False
+            DB_STATUS["active"] = "postgresql_failed"
+            DB_STATUS["error"] = err_str
+            raise RuntimeError(
+                f"[CRITICAL DATABASE FAILURE] Persistent PostgreSQL connection failed in production: {err_str}. "
+                f"Silent SQLite fallback was prohibited because persistent storage is enforced."
+            )
+    else:
+        # Development mode
+        if SQLALCHEMY_DATABASE_URL.startswith("postgresql"):
+            print("[DB INIT] Dev mode: Checking PostgreSQL connection...")
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                print("[DB INIT] Dev mode: Successfully connected to PostgreSQL!")
+                DB_STATUS["connected"] = True
+                DB_STATUS["active"] = "postgresql"
+                DB_STATUS["error"] = None
+            except Exception as e:
+                err_str = str(e)
+                print("\n" + "!" * 68)
+                print("[DEV MODE NOTICE] PostgreSQL connection failed in offline development environment.")
+                print(f"Details: {err_str}")
+                print("[SAFE DEV RECOVERY] Falling back to local SQLite database (backend/chatbot.db).")
+                print(">> NOTE: When deployed to Render or production, persistent PostgreSQL will be strictly enforced.")
                 print("!" * 68 + "\n")
                 DB_STATUS["connected"] = False
-                DB_STATUS["active"] = "postgresql_failed"
+                DB_STATUS["active"] = "sqlite_dev_fallback"
                 DB_STATUS["error"] = err_str
-                raise RuntimeError(
-                    f"[CRITICAL DATABASE FAILURE] PostgreSQL connection failed: {err_str}. "
-                    f"Silent SQLite fallback was prohibited because ENFORCE_PERSISTENT_DB is active."
-                )
-
-            print("[SAFE RECOVERY (DEV ONLY)] Temporarily switching to local SQLite database for offline dev testing.")
-            print(">> WARNING: Data will NOT persist in production without a persistent PostgreSQL database!")
-            print("!" * 68 + "\n")
-            
-            DB_STATUS["connected"] = False
-            DB_STATUS["active"] = "sqlite_dev_fallback"
-            DB_STATUS["error"] = err_str
-            
-            BACKEND_DIR = Path(__file__).resolve().parent
-            SQLITE_DB_PATH = (BACKEND_DIR / "chatbot.db").resolve()
-            SQLALCHEMY_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH.as_posix()}"
-            engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+                
+                BACKEND_DIR = Path(__file__).resolve().parent
+                SQLITE_DB_PATH = (BACKEND_DIR / "chatbot.db").resolve()
+                SQLALCHEMY_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH.as_posix()}"
+                engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+                SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        else:
+            print("[DB INIT] Development mode: using local SQLite database (backend/chatbot.db).")
+            DB_STATUS["connected"] = True
+            DB_STATUS["active"] = "sqlite"
+            DB_STATUS["error"] = None
 
     try:
         Base.metadata.create_all(bind=engine)
@@ -251,6 +321,8 @@ def init_db():
             DB_STATUS["connected"] = True
     except Exception as e:
         print(f"[DB INIT WARNING] Table creation note: {e}")
+        if in_prod:
+            raise RuntimeError(f"[CRITICAL] Database table creation failed in production: {e}")
 
     # Check and run database-agnostic column migrations
     try:
@@ -269,7 +341,7 @@ def init_db():
                 ("preferred_mode", "VARCHAR(20) DEFAULT 'learn'"),
                 ("preferred_language", "VARCHAR(10) DEFAULT 'en'"),
                 ("is_active", "INTEGER DEFAULT 1"),
-                ("created_at", "DATETIME")
+                ("created_at", "TIMESTAMP")
             ]
             for col_name, col_def in user_cols_to_add:
                 if col_name not in columns:
