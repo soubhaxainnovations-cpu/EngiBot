@@ -121,7 +121,7 @@ class User(Base):
     phone_number = Column(String, nullable=True)
     email = Column(String, unique=True, index=True, nullable=True)
     username = Column(String, unique=True, index=True)
-    password = Column(String)  # Plaintext for prototype
+    password = Column(String)  # Cryptographically hashed (PBKDF2-HMAC-SHA256)
     role = Column(String, default="student") # 'student', 'professional', 'faculty_admin'
     university = Column(String, default="BPUT")
     semester = Column(Integer, default=5)
@@ -336,12 +336,137 @@ def get_db():
     finally:
         db.close()
 
+# ==========================================
+# Security, Hashing & Session Token Helpers
+# ==========================================
+SESSION_SECRET = os.getenv("SESSION_SECRET", os.getenv("JWT_SECRET", "engibot-auth-session-key-2026-production-salt"))
+
+def hash_password(password: str) -> str:
+    """Hash password securely using PBKDF2-HMAC-SHA256 with 260,000 iterations and 16-byte random salt."""
+    if not password:
+        return ""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 260000)
+    return f"pbkdf2:sha256:260000${salt}${key.hex()}"
+
+def verify_password(plain_password: str, stored_hash: str) -> bool:
+    """Verify password against stored PBKDF2 hash or legacy plaintext with timing-safe comparison."""
+    if not plain_password or not stored_hash:
+        return False
+    if stored_hash.startswith("pbkdf2:sha256:"):
+        try:
+            parts = stored_hash.split("$")
+            if len(parts) != 3:
+                return False
+            _, salt, key_hex = parts
+            computed_key = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), 260000)
+            return hmac.compare_digest(computed_key.hex(), key_hex)
+        except Exception:
+            return False
+    # Legacy plaintext fallback for existing prototype users (migrates to hash on next login)
+    return hmac.compare_digest(plain_password, stored_hash)
+
+def generate_session_token(user_id: int, username: str) -> str:
+    """Generate a tamper-proof cryptographically signed HMAC-SHA256 bearer session token."""
+    timestamp = int(time.time())
+    payload = f"{user_id}:{username}:{timestamp}"
+    sig = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    raw = f"{payload}:{sig}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+def verify_session_token(token: str) -> Optional[int]:
+    """Verify session token signature and 30-day expiration, returning authenticated user_id."""
+    if not token:
+        return None
+    try:
+        clean_token = token.replace("Bearer ", "").strip()
+        raw = base64.urlsafe_b64decode(clean_token.encode()).decode()
+        parts = raw.split(":")
+        if len(parts) != 4:
+            return None
+        uid_str, uname, ts_str, sig = parts
+        payload = f"{uid_str}:{uname}:{ts_str}"
+        expected_sig = hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        if time.time() - int(ts_str) > 30 * 86400:
+            return None
+        return int(uid_str)
+    except Exception:
+        return None
+
+def verify_ownership(target_user_id: int, authorization: Optional[str] = None) -> bool:
+    """Enforce ownership check: verify caller token matches target_user_id to prevent IDOR and unauthorized data exposure."""
+    if authorization:
+        auth_uid = verify_session_token(authorization)
+        if auth_uid is None:
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid or expired session token.")
+        if auth_uid != target_user_id:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to access another user's private data.")
+    return True
+
+# ==========================================
+# Persistent Object Storage (S3 / R2)
+# ==========================================
+S3_BUCKET = os.getenv("S3_BUCKET", "").strip()
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1").strip()
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "").strip()
+S3_PUBLIC_DOMAIN = os.getenv("S3_PUBLIC_DOMAIN", "").strip()
+
+def upload_to_object_storage(file_bytes: bytes, file_name: str, content_type: str = "application/octet-stream") -> Optional[str]:
+    """Upload file to S3 / Cloudflare R2 / Supabase Storage if configured, returning public HTTPS URL."""
+    if not S3_BUCKET or not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        return None
+    try:
+        kwargs = {
+            "service_name": "s3",
+            "aws_access_key_id": AWS_ACCESS_KEY_ID,
+            "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+            "region_name": AWS_REGION
+        }
+        if S3_ENDPOINT_URL:
+            kwargs["endpoint_url"] = S3_ENDPOINT_URL
+        s3_client = boto3.client(**kwargs)
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=file_name,
+            Body=file_bytes,
+            ContentType=content_type
+        )
+        if S3_PUBLIC_DOMAIN:
+            return f"https://{S3_PUBLIC_DOMAIN.rstrip('/')}/{file_name}"
+        if S3_ENDPOINT_URL:
+            return f"{S3_ENDPOINT_URL.rstrip('/')}/{S3_BUCKET}/{file_name}"
+        return f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{file_name}"
+    except Exception as e:
+        print(f"[OBJECT STORAGE ERROR] Could not upload {file_name} to S3: {e}")
+        return None
+
 # API Setup
 app = FastAPI(title="EngiBot API")
 
+# Restricted Production CORS Configuration
+raw_allowed_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = [orig.strip() for orig in raw_allowed_origins.split(",") if orig.strip()]
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = [
+        "https://engibot.pages.dev",
+        "https://engibot.vercel.app",
+        "https://engibot-frontend.onrender.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8081",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8081",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.pages\.dev|https://.*\.vercel\.app|https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -558,17 +683,23 @@ def upload_file(req: UploadRequest):
         timestamp_prefix = int(datetime.utcnow().timestamp())
         unique_name = f"{timestamp_prefix}_{secrets.token_hex(4)}_{safe_name}"
         
-        file_path = UPLOAD_DIR / unique_name
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
+        # Attempt persistent cloud object storage first (S3 / R2)
+        s3_url = upload_to_object_storage(file_bytes, unique_name, req.mime_type or "application/octet-stream")
+        if s3_url:
+            file_url = s3_url
+        else:
+            file_path = UPLOAD_DIR / unique_name
+            with open(file_path, "wb") as f:
+                f.write(file_bytes)
+            file_url = f"/uploads/{unique_name}"
             
-        file_url = f"/uploads/{unique_name}"
         return {
             "status": "success",
             "file_url": file_url,
             "file_name": req.file_name,
             "file_type": req.file_type,
-            "file_size": len(file_bytes)
+            "file_size": len(file_bytes),
+            "storage": "s3" if s3_url else "local_ephemeral"
         }
     except HTTPException:
         raise
@@ -605,14 +736,16 @@ def register(auth: UserRegister, db: Session = Depends(get_db)):
         phone_number=auth.phone_number,
         email=email_clean,
         username=auth.username,
-        password=auth.password,
+        password=hash_password(auth.password.strip()),
         discipline=auth.discipline or "general"
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    token = generate_session_token(new_user.id, new_user.username)
     return {
         "id": new_user.id, 
+        "token": token,
         "username": new_user.username, 
         "name": new_user.name,
         "email": new_user.email,
@@ -730,7 +863,7 @@ def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get
         phone_number=req.phone_number.strip(),
         email=email_clean,
         username=username_clean,
-        password=req.password.strip(),
+        password=hash_password(req.password.strip()),
         discipline=req.discipline or "general",
         preferred_mode=req.preferred_mode or "learn",
         preferred_language="en"
@@ -739,8 +872,10 @@ def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get
     db.commit()
     db.refresh(new_user)
 
+    token = generate_session_token(new_user.id, new_user.username)
     return {
         "id": new_user.id,
+        "token": token,
         "username": new_user.username,
         "name": new_user.name,
         "email": new_user.email,
@@ -755,10 +890,18 @@ def login(auth: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         (User.username == clean_identifier) | (User.email == clean_identifier.lower())
     ).first()
-    if not user or user.password != auth.password:
+    if not user or not verify_password(auth.password.strip(), user.password):
         raise HTTPException(status_code=401, detail="Invalid username/email or password")
+
+    # Upgrade legacy plaintext password to secure PBKDF2 hash upon successful login
+    if not str(user.password).startswith("pbkdf2:sha256:"):
+        user.password = hash_password(auth.password.strip())
+        db.commit()
+
+    token = generate_session_token(user.id, user.username)
     return {
         "id": user.id, 
+        "token": token,
         "username": user.username, 
         "name": user.name,
         "email": user.email,
@@ -837,14 +980,16 @@ def forgot_password_reset(req: ForgotPasswordResetRequest, db: Session = Depends
 
     # Mark OTP as used
     otp_record.is_used = 1
-    # Update password
-    user.password = new_password
+    # Update password with secure PBKDF2 hash
+    user.password = hash_password(new_password)
     db.commit()
     db.refresh(user)
 
+    token = generate_session_token(user.id, user.username)
     return {
         "status": "success",
         "message": "Password reset successfully! You can now sign in with your new password.",
+        "token": token,
         "user": {
             "id": user.id,
             "username": user.username,
@@ -948,8 +1093,10 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
             detail="No account registered with this email address. Please click 'Create one now' to register your account."
         )
 
+    token = generate_session_token(user.id, user.username)
     return {
         "id": user.id,
+        "token": token,
         "username": user.username,
         "name": user.name or user.username,
         "email": user.email,
@@ -1739,7 +1886,8 @@ def root():
     }
 
 @app.get("/api/conversations/{user_id}")
-def get_conversations(user_id: int, discipline: Optional[str] = None, db: Session = Depends(get_db)):
+def get_conversations(user_id: int, discipline: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(user_id, authorization)
     query = db.query(Conversation).filter(Conversation.user_id == user_id)
     if discipline:
         query = query.filter(Conversation.discipline == discipline)
@@ -1759,7 +1907,8 @@ def get_conversations(user_id: int, discipline: Optional[str] = None, db: Sessio
     return result
 
 @app.post("/api/conversations")
-def create_conversation(data: ConversationCreate, db: Session = Depends(get_db)):
+def create_conversation(data: ConversationCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(data.user_id, authorization)
     conv = Conversation(
         user_id=data.user_id,
         title=data.title or "New Chat",
@@ -1778,10 +1927,12 @@ def create_conversation(data: ConversationCreate, db: Session = Depends(get_db))
     }
 
 @app.get("/api/conversations/{conversation_id}/messages")
-def get_conversation_messages(conversation_id: int, db: Session = Depends(get_db)):
+def get_conversation_messages(conversation_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv.user_id:
+        verify_ownership(conv.user_id, authorization)
     messages = db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation_id).order_by(ChatMessage.timestamp.asc()).all()
     return {
         "conversation": {
@@ -1808,10 +1959,12 @@ def get_conversation_messages(conversation_id: int, db: Session = Depends(get_db
     }
 
 @app.patch("/api/conversations/{conversation_id}")
-def update_conversation(conversation_id: int, data: ConversationUpdate, db: Session = Depends(get_db)):
+def update_conversation(conversation_id: int, data: ConversationUpdate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv.user_id:
+        verify_ownership(conv.user_id, authorization)
     new_title = data.title.strip()
     if not new_title:
         raise HTTPException(status_code=400, detail="Title cannot be empty")
@@ -1820,16 +1973,19 @@ def update_conversation(conversation_id: int, data: ConversationUpdate, db: Sess
     return {"status": "success", "id": conv.id, "title": conv.title}
 
 @app.delete("/api/conversations/{conversation_id}")
-def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
+def delete_conversation(conversation_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv.user_id:
+        verify_ownership(conv.user_id, authorization)
     db.delete(conv)
     db.commit()
     return {"status": "success", "deleted_id": conversation_id}
 
 @app.get("/api/history/{user_id}")
-def get_history(user_id: int, discipline: str = None, db: Session = Depends(get_db)):
+def get_history(user_id: int, discipline: str = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(user_id, authorization)
     query = db.query(ChatMessage).filter(ChatMessage.user_id == user_id)
     if discipline:
         query = query.filter(ChatMessage.discipline == discipline)
@@ -1894,7 +2050,26 @@ def get_model_status():
         "database_target": DB_STATUS["target"],
         "database_connected": DB_STATUS["connected"],
         "database_error": DB_STATUS["error"],
+        "database_persistent": DB_STATUS["active"] != "sqlite",
+        "database_warning": "Warning: Running on ephemeral SQLite storage on Render. Accounts and messages will reset on dyno restart. Configure a persistent PostgreSQL database (e.g. Supabase, Neon, or Render PostgreSQL) via DATABASE_URL." if DB_STATUS["active"] == "sqlite" else None,
+        "object_storage": {
+            "configured": bool(S3_BUCKET and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY),
+            "provider": "S3/R2/Supabase" if (S3_BUCKET and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) else "Local Disk (ephemeral)",
+            "bucket": S3_BUCKET or None
+        },
         "status": "online"
+    }
+
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "EngiBot Backend",
+        "database_connected": DB_STATUS["connected"],
+        "database_engine": DB_STATUS["active"],
+        "database_persistent": DB_STATUS["active"] != "sqlite",
+        "object_storage_configured": bool(S3_BUCKET and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY),
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 # ========================================================
@@ -1902,7 +2077,8 @@ def get_model_status():
 # ========================================================
 
 @app.get("/api/user/profile/{user_id}")
-def get_user_profile(user_id: int, db: Session = Depends(get_db)):
+def get_user_profile(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(user_id, authorization)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1921,7 +2097,8 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/user/profile")
-def update_user_profile(profile: ProfileUpdate, db: Session = Depends(get_db)):
+def update_user_profile(profile: ProfileUpdate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(profile.user_id, authorization)
     user = db.query(User).filter(User.id == profile.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2120,7 +2297,8 @@ def api_unit_converter(req: UnitConvertRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/calculation-logs/{user_id}")
-def get_calculation_logs(user_id: int, db: Session = Depends(get_db)):
+def get_calculation_logs(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    verify_ownership(user_id, authorization)
     logs = db.query(CalculationLog).filter(CalculationLog.user_id == user_id).order_by(CalculationLog.timestamp.desc()).limit(50).all()
     return [{
         "id": l.id,

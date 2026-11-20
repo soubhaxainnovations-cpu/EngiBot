@@ -917,6 +917,11 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // Helper to attach signed bearer session token to authenticated requests
+  const getAuthHeaders = () => {
+    return user?.token ? { 'Authorization': `Bearer ${user.token}` } : {};
+  };
+
   // Select and load a conversation session
   const handleSelectConversation = async (conv) => {
     if (!conv) return;
@@ -926,7 +931,9 @@ function App() {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/${conv.id}/messages`);
+      const res = await fetch(`${API_BASE}/api/conversations/${conv.id}/messages`, {
+        headers: { ...getAuthHeaders() }
+      });
       if (res.ok) {
         const data = await res.json();
         setMessages(data.messages || []);
@@ -941,7 +948,9 @@ function App() {
   const fetchUserProfile = async (userId) => {
     if (!userId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/user/profile/${userId}`);
+      const res = await fetch(`${API_BASE}/api/user/profile/${userId}`, {
+        headers: { ...getAuthHeaders() }
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.preferred_mode) {
@@ -962,7 +971,9 @@ function App() {
   const fetchConversations = async (autoSelectFirst = false) => {
     if (!user) return;
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/${user.id}`);
+      const res = await fetch(`${API_BASE}/api/conversations/${user.id}`, {
+        headers: { ...getAuthHeaders() }
+      });
       if (res.ok) {
         const data = await res.json();
         setConversations(data);
@@ -1041,7 +1052,9 @@ function App() {
   const fetchCalculationLogs = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`${API_BASE}/api/calculation-logs/${user.id}`);
+      const res = await fetch(`${API_BASE}/api/calculation-logs/${user.id}`, {
+        headers: { ...getAuthHeaders() }
+      });
       if (res.ok) {
         const data = await res.json();
         setCalculationLogs(data);
@@ -1238,7 +1251,7 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/conversations/${convId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ title: cleanTitle })
       });
       if (res.ok) {
@@ -1257,7 +1270,8 @@ function App() {
     e?.stopPropagation();
     try {
       const res = await fetch(`${API_BASE}/api/conversations/${convId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { ...getAuthHeaders() }
       });
       if (res.ok) {
         setConversations(prev => prev.filter(c => c.id !== convId));

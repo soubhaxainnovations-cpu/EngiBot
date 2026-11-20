@@ -1,4 +1,7 @@
 services:
+  # ==========================================
+  # 1. FastAPI Python Backend Service
+  # ==========================================
   - type: web
     name: engibot-backend
     runtime: python
@@ -11,41 +14,63 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.8
       - key: DATABASE_URL
-        sync: false # Set to your Supabase PostgreSQL URI
-      - key: ANTHROPIC_API_KEY
-        sync: false # Optional: Anthropic Claude API Key
+        sync: false # Set to your persistent Supabase / Neon PostgreSQL URI (Session mode, port 5432)
+      - key: SESSION_SECRET
+        generateValue: true # Secure random secret for session token signatures
+      - key: ALLOWED_ORIGINS
+        value: https://engibot.pages.dev,https://engibot-frontend.onrender.com,https://engibot.vercel.app,http://localhost:5173
+      # S3-Compatible Persistent Object Storage (AWS S3, Cloudflare R2, Supabase Storage)
+      - key: S3_BUCKET
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      - key: S3_ENDPOINT_URL
+        sync: false # Optional: for Cloudflare R2 or Supabase S3 endpoint
+      - key: S3_PUBLIC_DOMAIN
+        sync: false # Optional: CDN or public URL domain for uploads
+      # AI Provider Keys
       - key: GROQ_API_KEY
-        sync: false # Groq API Key for 120B reasoning model
+        sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: OPENROUTER_API_KEY
-        sync: false # Optional: OpenRouter API Key for free cloud models
-      - key: OPENROUTER_API_KEY_2
-        sync: false # Optional: OpenRouter Secondary API Key
-      - key: OPENROUTER_API_KEY_3
-        sync: false # Optional: OpenRouter Tertiary API Key
+        sync: false
       - key: AI_PROVIDER
         value: auto
+      # Email OTP Delivery (HTTPS APIs to bypass Render free SMTP block)
       - key: RESEND_API_KEY
-        sync: false # Resend HTTPS API Key for cloud email delivery (bypasses Render SMTP block)
+        sync: false
       - key: RESEND_FROM_EMAIL
         value: onboarding@resend.dev
       - key: BREVO_API_KEY
-        sync: false # Brevo (Sendinblue) API key: sends to ANY email over HTTPS without custom domain
+        sync: false
       - key: BREVO_SENDER_EMAIL
         value: soubhaxainnovations@gmail.com
       - key: BREVO_SENDER_NAME
         value: EngiBot Assistant
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: 587
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM_NAME
-        value: EngiBot Assistant
-      - key: SMTP_FROM_EMAIL
-        sync: false
 
+  # ==========================================
+  # 2. React / Vite Web Frontend Static Site
+  # ==========================================
+  - type: web
+    name: engibot-frontend
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://engibot-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://engibot-backend.onrender.com/api/*
+      - type: rewrite
+        source: /uploads/*
+        destination: https://engibot-backend.onrender.com/uploads/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
