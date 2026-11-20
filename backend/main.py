@@ -218,11 +218,23 @@ def init_db():
                 print(">> FIX: In Render Environment tab, change :6543 to :5432 (Session mode) in DATABASE_URL!")
             elif "could not translate host name" in err_str:
                 print(">> REASON: Host could not be resolved. Ensure you use the pooler host.")
-            print("[SAFE RECOVERY] Temporarily switching to local SQLite database so Render service stays ONLINE!")
+            if os.getenv("ENFORCE_PERSISTENT_DB", os.getenv("RENDER", "false")).lower() in {"true", "1", "yes"}:
+                print("[CRITICAL] ENFORCE_PERSISTENT_DB is active. Silent SQLite fallback is blocked to prevent data loss!")
+                print("!" * 68 + "\n")
+                DB_STATUS["connected"] = False
+                DB_STATUS["active"] = "postgresql_failed"
+                DB_STATUS["error"] = err_str
+                raise RuntimeError(
+                    f"[CRITICAL DATABASE FAILURE] PostgreSQL connection failed: {err_str}. "
+                    f"Silent SQLite fallback was prohibited because ENFORCE_PERSISTENT_DB is active."
+                )
+
+            print("[SAFE RECOVERY (DEV ONLY)] Temporarily switching to local SQLite database for offline dev testing.")
+            print(">> WARNING: Data will NOT persist in production without a persistent PostgreSQL database!")
             print("!" * 68 + "\n")
             
             DB_STATUS["connected"] = False
-            DB_STATUS["active"] = "sqlite_fallback"
+            DB_STATUS["active"] = "sqlite_dev_fallback"
             DB_STATUS["error"] = err_str
             
             SQLALCHEMY_DATABASE_URL = "sqlite:///./chatbot.db"
@@ -404,6 +416,56 @@ def verify_ownership(target_user_id: int, authorization: Optional[str] = None) -
         if auth_uid != target_user_id:
             raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to access another user's private data.")
     return True
+
+# ==========================================
+# OTP Hashing & Rate Limiting Helpers
+# ==========================================
+OTP_SEND_ATTEMPTS: Dict[str, List[float]] = {}
+OTP_VERIFY_ATTEMPTS: Dict[str, List[float]] = {}
+
+def hash_otp_code(code: str) -> str:
+    """Hash numeric OTP code using SHA-256 with server session secret."""
+    return hashlib.sha256(f"{code.strip()}:{SESSION_SECRET}".encode("utf-8")).hexdigest()
+
+def verify_stored_otp(candidate_code: str, stored_val: str) -> bool:
+    """Verify OTP code supporting both hashed storage and legacy plaintext with timing-safe comparison."""
+    if not candidate_code or not stored_val:
+        return False
+    if len(stored_val) == 64:
+        cand_hash = hash_otp_code(candidate_code)
+        return hmac.compare_digest(cand_hash, stored_val)
+    return hmac.compare_digest(candidate_code.strip(), stored_val.strip())
+
+def check_otp_send_rate_limit(email: str, max_requests: int = 3, window_seconds: int = 600):
+    """Enforce maximum 3 OTP send requests per 10 minutes per email address."""
+    clean_email = email.lower().strip()
+    now = time.time()
+    history = [t for t in OTP_SEND_ATTEMPTS.get(clean_email, []) if now - t < window_seconds]
+    if len(history) >= max_requests:
+        cooldown = int(window_seconds - (now - history[0]))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many verification requests. Please wait {cooldown} seconds before requesting another code."
+        )
+    history.append(now)
+    OTP_SEND_ATTEMPTS[clean_email] = history
+
+def check_otp_verify_rate_limit(email: str, max_attempts: int = 5, window_seconds: int = 600):
+    """Enforce maximum 5 verification attempts per 10 minutes to prevent brute-force attacks."""
+    clean_email = email.lower().strip()
+    now = time.time()
+    history = [t for t in OTP_VERIFY_ATTEMPTS.get(clean_email, []) if now - t < window_seconds]
+    if len(history) >= max_attempts:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many incorrect verification attempts. For your security, this code has been locked. Please request a new code."
+        )
+    history.append(now)
+    OTP_VERIFY_ATTEMPTS[clean_email] = history
+
+def reset_otp_verify_rate_limit(email: str):
+    """Reset failed verification attempts upon successful verification."""
+    OTP_VERIFY_ATTEMPTS.pop(email.lower().strip(), None)
 
 # ==========================================
 # Persistent Object Storage (S3 / R2)
@@ -667,6 +729,20 @@ class ConversationCreate(BaseModel):
 class ConversationUpdate(BaseModel):
     title: str
 
+# Prohibited dangerous executable extensions
+DANGEROUS_EXTENSIONS = {
+    ".exe", ".bat", ".cmd", ".sh", ".dll", ".so", ".vbs", ".msi", 
+    ".php", ".phtml", ".jsp", ".asp", ".aspx", ".cgi", ".jar", ".scr"
+}
+
+# Permitted safe extensions
+ALLOWED_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ".pdf", ".txt", ".csv", ".docx", ".xlsx", ".pptx",
+    ".py", ".c", ".cpp", ".java", ".js", ".ts", ".json", ".md",
+    ".mp4", ".webm"
+}
+
 @app.post("/api/upload")
 def upload_file(req: UploadRequest):
     try:
@@ -676,10 +752,38 @@ def upload_file(req: UploadRequest):
         
         file_bytes = base64.b64decode(raw_b64)
         
-        if len(file_bytes) > 50 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File size exceeds maximum allowed limit of 50MB")
+        # Max file size limit: 25MB
+        if len(file_bytes) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size exceeds maximum allowed limit of 25MB.")
 
-        safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', req.file_name)
+        # Path traversal protection and filename sanitization
+        original_name = req.file_name.strip()
+        base_name = os.path.basename(original_name)
+        file_ext = os.path.splitext(base_name)[1].lower()
+
+        if file_ext in DANGEROUS_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"File extension '{file_ext}' is strictly prohibited for security reasons.")
+
+        if file_ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"File type '{file_ext}' is not supported. Please upload supported images, documents, or engineering files.")
+
+        # Magic byte verification for binary file integrity
+        if file_ext in {".jpg", ".jpeg"}:
+            if not file_bytes.startswith(b"\xff\xd8\xff"):
+                raise HTTPException(status_code=400, detail="File content does not match a valid JPEG image.")
+        elif file_ext == ".png":
+            if not file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise HTTPException(status_code=400, detail="File content does not match a valid PNG image.")
+        elif file_ext == ".gif":
+            if not (file_bytes.startswith(b"GIF87a") or file_bytes.startswith(b"GIF89a")):
+                raise HTTPException(status_code=400, detail="File content does not match a valid GIF image.")
+        elif file_ext == ".pdf":
+            if not file_bytes.startswith(b"%PDF"):
+                raise HTTPException(status_code=400, detail="File content does not match a valid PDF document.")
+
+        safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', base_name).lstrip(".")
+        if not safe_name:
+            safe_name = f"attachment{file_ext}"
         timestamp_prefix = int(datetime.utcnow().timestamp())
         unique_name = f"{timestamp_prefix}_{secrets.token_hex(4)}_{safe_name}"
         
@@ -696,7 +800,7 @@ def upload_file(req: UploadRequest):
         return {
             "status": "success",
             "file_url": file_url,
-            "file_name": req.file_name,
+            "file_name": safe_name,
             "file_type": req.file_type,
             "file_size": len(file_bytes),
             "storage": "s3" if s3_url else "local_ephemeral"
@@ -781,6 +885,9 @@ def register_send_otp(req: RegisterSendOTPRequest, db: Session = Depends(get_db)
     if age < 18:
         raise HTTPException(status_code=400, detail="You must be at least 18 years old to register.")
 
+    # Rate limit OTP send requests (max 3 per 10 minutes)
+    check_otp_send_rate_limit(email_clean)
+
     # Generate 6-digit numeric OTP
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = datetime.utcnow() + timedelta(minutes=10)
@@ -802,7 +909,7 @@ def register_send_otp(req: RegisterSendOTPRequest, db: Session = Depends(get_db)
 
     new_otp = EmailOTP(
         email=email_clean,
-        otp_code=otp_code,
+        otp_code=hash_otp_code(otp_code),
         expires_at=expires_at,
         is_used=0
     )
@@ -833,16 +940,23 @@ def register_verify_otp(req: RegisterVerifyOTPRequest, db: Session = Depends(get
         raise HTTPException(status_code=400, detail="Email and verification code are required.")
 
     now = datetime.utcnow()
-    otp_record = db.query(EmailOTP).filter(
+    candidates = db.query(EmailOTP).filter(
         EmailOTP.email == email_clean,
-        EmailOTP.otp_code == code_clean,
         EmailOTP.is_used == 0,
         EmailOTP.expires_at >= now
-    ).order_by(EmailOTP.id.desc()).first()
+    ).order_by(EmailOTP.id.desc()).all()
+
+    otp_record = None
+    for cand in candidates:
+        if verify_stored_otp(code_clean, cand.otp_code):
+            otp_record = cand
+            break
 
     if not otp_record:
+        check_otp_verify_rate_limit(email_clean)
         raise HTTPException(status_code=400, detail="Invalid or expired verification code. Please request a new code.")
 
+    reset_otp_verify_rate_limit(email_clean)
     otp_record.is_used = 1
     db.commit()
 
@@ -929,12 +1043,14 @@ def forgot_password_send_otp(req: ForgotPasswordSendRequest, db: Session = Depen
         EmailOTP.is_used == 0
     ).update({"is_used": 2})
 
+    check_otp_send_rate_limit(email_clean)
+
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = datetime.utcnow() + timedelta(minutes=10)
 
     db_otp = EmailOTP(
         email=email_clean,
-        otp_code=otp_code,
+        otp_code=hash_otp_code(otp_code),
         expires_at=expires_at,
         is_used=0
     )
@@ -968,16 +1084,23 @@ def forgot_password_reset(req: ForgotPasswordResetRequest, db: Session = Depends
 
     # Validate OTP
     now = datetime.utcnow()
-    otp_record = db.query(EmailOTP).filter(
+    candidates = db.query(EmailOTP).filter(
         EmailOTP.email == email_clean,
-        EmailOTP.otp_code == code_clean,
         EmailOTP.is_used == 0,
         EmailOTP.expires_at >= now
-    ).order_by(EmailOTP.id.desc()).first()
+    ).order_by(EmailOTP.id.desc()).all()
+
+    otp_record = None
+    for cand in candidates:
+        if verify_stored_otp(code_clean, cand.otp_code):
+            otp_record = cand
+            break
 
     if not otp_record:
+        check_otp_verify_rate_limit(email_clean)
         raise HTTPException(status_code=400, detail="Invalid or expired verification code. Please request a new code.")
 
+    reset_otp_verify_rate_limit(email_clean)
     # Mark OTP as used
     otp_record.is_used = 1
     # Update password with secure PBKDF2 hash
@@ -1015,15 +1138,18 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
             detail="No account registered with this email address. Please click 'Create one now' to register your account."
         )
 
-    # Generate 6-digit numeric OTP
-    otp_code = f"{secrets.randbelow(900000) + 100000}"
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
-
     # Invalidate old unused OTPs for this email to keep clean
     db.query(EmailOTP).filter(
         EmailOTP.email == email_clean,
         EmailOTP.is_used == 0
     ).update({"is_used": 2}) # 2 = superseded
+
+    # Rate limit OTP send requests (max 3 per 10 minutes)
+    check_otp_send_rate_limit(email_clean)
+
+    # Generate 6-digit numeric OTP
+    otp_code = f"{secrets.randbelow(900000) + 100000}"
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
 
     # Send email directly to the user's mail ID
     mail_result = send_otp_email(email_clean, otp_code)
@@ -1036,10 +1162,10 @@ def send_otp(request: OTPRequest, db: Session = Depends(get_db)):
         is_demo_mode = True
         print(f"\n[DEMO MODE OTP] Email delivery unavailable ({err}). Verification Code for {email_clean} is: {otp_code}\n")
 
-    # Save to database
+    # Save to database with secure hash
     new_otp = EmailOTP(
         email=email_clean,
-        otp_code=otp_code,
+        otp_code=hash_otp_code(otp_code),
         expires_at=expires_at,
         is_used=0
     )
@@ -1071,16 +1197,23 @@ def verify_otp(request: OTPVerify, db: Session = Depends(get_db)):
 
     # Find matching valid OTP
     now = datetime.utcnow()
-    otp_record = db.query(EmailOTP).filter(
+    candidates = db.query(EmailOTP).filter(
         EmailOTP.email == email_clean,
-        EmailOTP.otp_code == code_clean,
         EmailOTP.is_used == 0,
         EmailOTP.expires_at >= now
-    ).order_by(EmailOTP.id.desc()).first()
+    ).order_by(EmailOTP.id.desc()).all()
+
+    otp_record = None
+    for cand in candidates:
+        if verify_stored_otp(code_clean, cand.otp_code):
+            otp_record = cand
+            break
 
     if not otp_record:
+        check_otp_verify_rate_limit(email_clean)
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code. Please request a new code.")
 
+    reset_otp_verify_rate_limit(email_clean)
     # Mark OTP as used
     otp_record.is_used = 1
     db.commit()
@@ -2368,12 +2501,10 @@ def generate_flashcards(req: ExamQuizRequest):
 # Software Performance, Confusion Matrix & Analytics Graphs
 # ========================================================
 
-ADMIN_EMAILS = [
-    "soubhaxainnovations@gmail.com"
-]
+raw_admin_emails = os.getenv("ADMIN_EMAILS", os.getenv("ADMIN_EMAIL", "soubhaxainnovations@gmail.com"))
+ADMIN_EMAILS = [e.strip().lower() for e in raw_admin_emails.split(",") if e.strip()]
 
-ADMIN_MASTER_MFA_KEY = os.getenv("ADMIN_MFA_KEY", "ENGIBOT-MFA-2026-ROOT").strip()
-ADMIN_MASTER_MFA_PIN = "982461"
+ADMIN_RECOVERY_KEY = os.getenv("ADMIN_RECOVERY_KEY", "").strip()
 SERVER_START_TIME = datetime.utcnow()
 
 # Ephemeral storage for admin challenges & authenticated sessions
@@ -2479,6 +2610,9 @@ def admin_login_send_otp(req: AdminOTPRequest, db: Session = Depends(get_db)):
             admin_user.role = "admin"
             db.commit()
 
+    # Rate limit admin OTP requests
+    check_otp_send_rate_limit(email_clean)
+
     # Generate 6-digit numeric OTP
     otp_code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = datetime.utcnow() + timedelta(minutes=10)
@@ -2494,7 +2628,7 @@ def admin_login_send_otp(req: AdminOTPRequest, db: Session = Depends(get_db)):
 
     new_otp = EmailOTP(
         email=email_clean,
-        otp_code=otp_code,
+        otp_code=hash_otp_code(otp_code),
         expires_at=expires_at,
         is_used=0
     )
@@ -2517,16 +2651,23 @@ def admin_login_verify_otp(req: AdminOTPVerifyRequest, db: Session = Depends(get
         raise HTTPException(status_code=403, detail="Unauthorized administrator email.")
 
     now = datetime.utcnow()
-    otp_record = db.query(EmailOTP).filter(
+    candidates = db.query(EmailOTP).filter(
         EmailOTP.email == email_clean,
-        EmailOTP.otp_code == code_clean,
         EmailOTP.is_used == 0,
         EmailOTP.expires_at >= now
-    ).order_by(EmailOTP.id.desc()).first()
+    ).order_by(EmailOTP.id.desc()).all()
+
+    otp_record = None
+    for cand in candidates:
+        if verify_stored_otp(code_clean, cand.otp_code):
+            otp_record = cand
+            break
 
     if not otp_record:
+        check_otp_verify_rate_limit(email_clean)
         raise HTTPException(status_code=400, detail="Invalid or expired OTP code. Please request a new code.")
 
+    reset_otp_verify_rate_limit(email_clean)
     otp_record.is_used = 1
     db.commit()
 
@@ -2570,12 +2711,10 @@ def admin_login_verify_mfa(req: AdminMFAVerifyRequest, db: Session = Depends(get
     # 1. Primary Check: Standard RFC 6238 TOTP rolling 6-digit code from Google/Microsoft Authenticator
     is_valid_totp = verify_totp(mfa_code, totp_secret)
 
-    # 2. Secondary Recovery Check: Configured Root Master Key (in case device is inaccessible)
-    is_recovery_key = mfa_code.upper() in {
-        ADMIN_MASTER_MFA_KEY.upper(),
-        "ENGIBOT-MFA-2026",
-        "ENGIBOT-MFA-2026-ROOT"
-    }
+    # 2. Secondary Recovery Check: Environment configured recovery key (never hardcoded)
+    is_recovery_key = False
+    if ADMIN_RECOVERY_KEY and len(ADMIN_RECOVERY_KEY) >= 16:
+        is_recovery_key = hmac.compare_digest(mfa_code.upper(), ADMIN_RECOVERY_KEY.upper())
 
     if not is_valid_totp and not is_recovery_key:
         raise HTTPException(
@@ -2942,7 +3081,7 @@ ADMIN_AUDIT_LOGS = [
         "timestamp": (datetime.utcnow() - timedelta(minutes=58)).strftime("%Y-%m-%d %H:%M:%S"),
         "admin": "soubhaxainnovations@gmail.com",
         "action": "LOGIN_MFA_SUCCESS",
-        "details": "Dual-factor authenticated via Master PIN 982461",
+        "details": "Dual-factor authenticated via RFC 6238 TOTP",
         "ip": "127.0.0.1"
     },
     {

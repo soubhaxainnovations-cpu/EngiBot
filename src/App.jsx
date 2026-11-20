@@ -3857,7 +3857,7 @@ function App() {
                       <ShieldCheck size={18} className="kpi-icon green" />
                     </div>
                     <div className="admin-kpi-value" style={{ color: '#16a34a' }}>Enforced</div>
-                    <div className="admin-kpi-subtext">Email OTP + Master Key 982461</div>
+                    <div className="admin-kpi-subtext">Email OTP + Authenticator App (TOTP)</div>
                   </div>
                   <div className="admin-kpi-card">
                     <div className="admin-kpi-header">
